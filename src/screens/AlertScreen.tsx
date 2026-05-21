@@ -302,7 +302,9 @@ export default function IAScreen({ navigation }: any) {
 
               <View style={styles.petStatusBadge}>
                 <Text style={styles.petStatusText}>
-                  {alertasAtivos.length} alerta(s)
+                  {alertasAtivos.length === 1
+                    ? "1 alerta"
+                    : `${alertasAtivos.length} alertas`}
                 </Text>
               </View>
             </View>
