@@ -111,7 +111,7 @@ const CUIDADOS = [
     titulo: "Check-up anual",
     data: "Mantenha os exames em dia",
     icone: "stethoscope",
-    cor: "#0F9D8E",
+    cor: "#0F766E",
     bg: "#F0FDFA",
     status: "Saúde",
     statusCor: "#0F766E",
