@@ -167,7 +167,7 @@ const PLANOS: Plano[] = [
       "Plano completo para acompanhar rotina, vacinas, consultas e alertas inteligentes.",
     beneficios: [
       "Cadastro de até 5 pets",
-      "Todos os benefícios do Médio",
+      "Todos os benefícios do Básico",
       "Alertas inteligentes por fase de vida",
       "Recomendações por espécie",
       "Relatório mensal de saúde",
@@ -693,7 +693,7 @@ function PlanosModal({
                 Cuidado contínuo e organizado
               </Text>
               <Text style={styles.modalIntroText}>
-                Escolha entre Médio, Plus e Premium. Todos possuem opção mensal
+                Escolha entre Básico, Plus e Premium. Todos possuem opção mensal
                 ou anual.
               </Text>
             </View>
@@ -782,7 +782,7 @@ function PlanosModal({
                       name={
                         plano.id === "basico"
                           ? "paw-outline"
-                          : plano.id === "medio"
+                          : plano.id === "plus"
                             ? "heart-pulse"
                             : "crown-outline"
                       }
