@@ -70,7 +70,9 @@ export default function IAScreen({ navigation }: any) {
     try {
       const petsSalvos = await AsyncStorage.getItem(PETS_KEY);
       const historicoSalvo = await AsyncStorage.getItem(HISTORICO_KEY);
-      const resolvidosSalvos = await AsyncStorage.getItem(ALERTAS_RESOLVIDOS_KEY);
+      const resolvidosSalvos = await AsyncStorage.getItem(
+        ALERTAS_RESOLVIDOS_KEY,
+      );
 
       const listaPets: Pet[] = petsSalvos ? JSON.parse(petsSalvos) : [];
       const listaHistorico: HistoricoPet[] = historicoSalvo
@@ -97,14 +99,14 @@ export default function IAScreen({ navigation }: any) {
   useFocusEffect(
     useCallback(() => {
       carregarDados();
-    }, [carregarDados])
+    }, [carregarDados]),
   );
 
   const petSelecionado = pets.find((pet) => pet.id === petSelecionadoId);
 
   const historicoDoPet = useMemo(() => {
-  return historico.filter((item) => item.petId === petSelecionadoId);
-}, [historico, petSelecionadoId]);
+    return historico.filter((item) => item.petId === petSelecionadoId);
+  }, [historico, petSelecionadoId]);
 
   const alertasGerados = useMemo(() => {
     if (!petSelecionado) return [];
@@ -113,16 +115,22 @@ export default function IAScreen({ navigation }: any) {
   }, [petSelecionado, historicoDoPet]);
 
   const alertasAtivos = alertasGerados.filter(
-    (alerta) => !alertasResolvidos.includes(alerta.id)
+    (alerta) => !alertasResolvidos.includes(alerta.id),
   );
 
   const alertasResolvidosDoPet = alertasGerados.filter((alerta) =>
-    alertasResolvidos.includes(alerta.id)
+    alertasResolvidos.includes(alerta.id),
   );
 
-  const totalAlto = alertasAtivos.filter((alerta) => alerta.nivel === "alto").length;
-  const totalMedio = alertasAtivos.filter((alerta) => alerta.nivel === "medio").length;
-  const totalBaixo = alertasAtivos.filter((alerta) => alerta.nivel === "baixo").length;
+  const totalAlto = alertasAtivos.filter(
+    (alerta) => alerta.nivel === "alto",
+  ).length;
+  const totalMedio = alertasAtivos.filter(
+    (alerta) => alerta.nivel === "medio",
+  ).length;
+  const totalBaixo = alertasAtivos.filter(
+    (alerta) => alerta.nivel === "baixo",
+  ).length;
 
   async function resolverAlerta(alertaId: string) {
     const novaLista = [...alertasResolvidos, alertaId];
@@ -130,7 +138,7 @@ export default function IAScreen({ navigation }: any) {
     try {
       await AsyncStorage.setItem(
         ALERTAS_RESOLVIDOS_KEY,
-        JSON.stringify(novaLista)
+        JSON.stringify(novaLista),
       );
 
       setAlertasResolvidos(novaLista);
@@ -140,19 +148,29 @@ export default function IAScreen({ navigation }: any) {
   }
 
   async function limparAlertasResolvidos() {
+    if (!petSelecionadoId) return;
+
     Alert.alert(
       "Restaurar alertas",
-      "Deseja exibir novamente todos os alertas resolvidos?",
+      "Deseja exibir novamente os alertas resolvidos deste pet?",
       [
         { text: "Cancelar", style: "cancel" },
         {
           text: "Restaurar",
           onPress: async () => {
-            await AsyncStorage.removeItem(ALERTAS_RESOLVIDOS_KEY);
-            setAlertasResolvidos([]);
+            const novaLista = alertasResolvidos.filter(
+              (id) => !id.startsWith(`${petSelecionadoId}-`),
+            );
+
+            await AsyncStorage.setItem(
+              ALERTAS_RESOLVIDOS_KEY,
+              JSON.stringify(novaLista),
+            );
+
+            setAlertasResolvidos(novaLista);
           },
         },
-      ]
+      ],
     );
   }
 
@@ -175,13 +193,21 @@ export default function IAScreen({ navigation }: any) {
           </View>
 
           <View style={styles.headerIcon}>
-            <MaterialCommunityIcons name="robot-happy-outline" size={28} color="#00796B" />
+            <MaterialCommunityIcons
+              name="robot-happy-outline"
+              size={28}
+              color="#00796B"
+            />
           </View>
         </View>
 
         {pets.length === 0 ? (
           <View style={styles.emptyCard}>
-            <MaterialCommunityIcons name="paw-outline" size={46} color="#00796B" />
+            <MaterialCommunityIcons
+              name="paw-outline"
+              size={46}
+              color="#00796B"
+            />
             <Text style={styles.emptyTitle}>Nenhum pet cadastrado</Text>
             <Text style={styles.emptyText}>
               Cadastre um pet para a IA gerar alertas personalizados de saúde,
@@ -326,7 +352,11 @@ export default function IAScreen({ navigation }: any) {
 
                 {alertasResolvidosDoPet.map((alerta) => (
                   <View key={alerta.id} style={styles.resolvedItem}>
-                    <Ionicons name="checkmark-circle" size={18} color="#00796B" />
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color="#00796B"
+                    />
                     <Text style={styles.resolvedText}>{alerta.titulo}</Text>
                   </View>
                 ))}
@@ -341,7 +371,7 @@ export default function IAScreen({ navigation }: any) {
 
 function gerarAlertasInteligentes(
   pet: Pet,
-  historicoDoPet: HistoricoPet[]
+  historicoDoPet: HistoricoPet[],
 ): AlertaIA[] {
   const alertas: AlertaIA[] = [];
 
@@ -353,7 +383,9 @@ function gerarAlertasInteligentes(
   const vacinasPendentes = vacinas.filter((vacina) => !vacina.emDia);
 
   const consultas = historicoDoPet.filter((item) => item.tipo === "consulta");
-  const vacinasHistorico = historicoDoPet.filter((item) => item.tipo === "vacina");
+  const vacinasHistorico = historicoDoPet.filter(
+    (item) => item.tipo === "vacina",
+  );
   const exames = historicoDoPet.filter((item) => item.tipo === "exame");
 
   const ultimoRegistro =
@@ -619,7 +651,9 @@ function getNivelBg(nivel: NivelAlerta) {
   return "#E0F5F2";
 }
 
-function getIconePet(especieId?: string): keyof typeof MaterialCommunityIcons.glyphMap {
+function getIconePet(
+  especieId?: string,
+): keyof typeof MaterialCommunityIcons.glyphMap {
   switch (especieId) {
     case "cachorro":
       return "dog";
