@@ -1,18 +1,19 @@
-import React, { useCallback, useState } from "react";
-import {
-  Alert,
-  ScrollView,
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-  StatusBar,
-} from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
+import React, { useCallback, useState } from "react";
+import {
+  Alert,
+  GestureResponderEvent,
+  Modal,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 const PROFILE_KEY = "@clyvocare_perfil_usuario";
 const PLANO_KEY = "@clyvocare_plano_atual";
@@ -30,11 +31,13 @@ type PerfilUsuario = {
 };
 
 type PlanoSalvo = {
-  id: string;
-  nome: string;
+  id?: string;
+  planoId?: string;
+  nome?: string;
   ciclo: CicloPlano;
-  preco: string;
-  adquiridoEm: string;
+  preco?: string;
+  adquiridoEm?: string;
+  dataContratacao?: string;
 };
 
 type PlanoOpcao = {
@@ -48,8 +51,8 @@ type PlanoOpcao = {
 
 const PLANOS: PlanoOpcao[] = [
   {
-    id: "medio",
-    nome: "Médio",
+    id: "basico",
+    nome: "Básico",
     subtitulo: "Para rotina essencial",
     precoMensal: "R$ 39,90",
     precoAnual: "R$ 399,90",
@@ -61,7 +64,8 @@ const PLANOS: PlanoOpcao[] = [
     subtitulo: "Para cuidado inteligente",
     precoMensal: "R$ 59,90",
     precoAnual: "R$ 599,90",
-    descricao: "Inclui alertas inteligentes, recomendações e relatórios mensais.",
+    descricao:
+      "Inclui alertas inteligentes, recomendações e relatórios mensais.",
   },
   {
     id: "premium",
@@ -69,7 +73,8 @@ const PLANOS: PlanoOpcao[] = [
     subtitulo: "Para cuidado completo",
     precoMensal: "R$ 89,90",
     precoAnual: "R$ 899,90",
-    descricao: "Plano mais completo, com prioridade, suporte e histórico avançado.",
+    descricao:
+      "Plano mais completo, com prioridade, suporte e histórico avançado.",
   },
 ];
 
@@ -131,7 +136,7 @@ export default function ProfileScreen({ navigation }: any) {
   useFocusEffect(
     useCallback(() => {
       carregarDados();
-    }, [carregarDados])
+    }, [carregarDados]),
   );
 
   const perfilCriado = perfil.nome.trim().length > 0;
@@ -168,14 +173,19 @@ export default function ProfileScreen({ navigation }: any) {
   }
 
   async function alterarPlano(plano: PlanoOpcao) {
-    const preco = cicloPlano === "mensal" ? plano.precoMensal : plano.precoAnual;
+    const preco =
+      cicloPlano === "mensal" ? plano.precoMensal : plano.precoAnual;
+
+    const agora = new Date().toISOString();
 
     const novoPlano: PlanoSalvo = {
       id: plano.id,
+      planoId: plano.id,
       nome: plano.nome,
       ciclo: cicloPlano,
       preco,
-      adquiridoEm: new Date().toISOString(),
+      adquiridoEm: agora,
+      dataContratacao: agora,
     };
 
     try {
@@ -185,22 +195,10 @@ export default function ProfileScreen({ navigation }: any) {
 
       Alert.alert(
         "Plano adquirido",
-        `Você agora está usando o plano ${plano.nome} ${cicloPlano}.`
+        `Você agora está usando o plano ${plano.nome} ${cicloPlano}.`,
       );
     } catch {
       Alert.alert("Erro", "Não foi possível alterar o plano.");
-    }
-  }
-
-  async function removerPlano() {
-    try {
-      await AsyncStorage.removeItem(PLANO_KEY);
-      setPlanoAtual(null);
-      setModalPlanoVisivel(false);
-
-      Alert.alert("Plano removido", "Você ficou sem plano ativo.");
-    } catch {
-      Alert.alert("Erro", "Não foi possível remover o plano.");
     }
   }
 
@@ -214,6 +212,26 @@ export default function ProfileScreen({ navigation }: any) {
     }
 
     return `${partes[0].charAt(0)}${partes[partes.length - 1].charAt(0)}`.toUpperCase();
+  }
+
+  async function removerPlano(event: GestureResponderEvent): Promise<void> {
+    // confirma antes de remover
+    Alert.alert("Remover plano", "Deseja realmente remover seu plano atual?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Remover",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await AsyncStorage.removeItem(PLANO_KEY);
+            setPlanoAtual(null);
+            Alert.alert("Pronto", "Plano removido com sucesso.");
+          } catch {
+            Alert.alert("Erro", "Não foi possível remover o plano.");
+          }
+        },
+      },
+    ]);
   }
 
   return (
@@ -365,7 +383,8 @@ export default function ProfileScreen({ navigation }: any) {
                 ClyvoCare {planoAtual.nome}
               </Text>
               <Text style={styles.currentPlanPrice}>
-                {planoAtual.preco} / {planoAtual.ciclo === "mensal" ? "mês" : "ano"}
+                {planoAtual.preco} /{" "}
+                {planoAtual.ciclo === "mensal" ? "mês" : "ano"}
               </Text>
 
               <View style={styles.activeBadge}>
@@ -405,7 +424,7 @@ export default function ProfileScreen({ navigation }: any) {
           />
 
           <ActionButton
-            icon="calendar-outinel"
+            icon="calendar-outline"
             title="Agenda"
             subtitle="Consultar vacinas e consultas"
             onPress={() => navigation?.navigate?.("Agenda")}
@@ -779,17 +798,17 @@ const styles = StyleSheet.create({
   },
 
   header: {
-  height: 115,
-  backgroundColor: "#0F766E",
-  borderBottomLeftRadius: 24,
-  borderBottomRightRadius: 24,
-  paddingTop: 34,
-  paddingHorizontal: 18,
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 12,
-  overflow: "hidden",
-},
+    height: 115,
+    backgroundColor: "#0F766E",
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    paddingTop: 34,
+    paddingHorizontal: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    overflow: "hidden",
+  },
 
   headerBlobOne: {
     position: "absolute",
@@ -811,15 +830,15 @@ const styles = StyleSheet.create({
     left: 70,
   },
 
- backButton: {
-  width: 40,
-  height: 40,
-  borderRadius: 20,
-  backgroundColor: "#FFFFFF",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 2,
-},
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
+  },
 
   headerTextBox: {
     flex: 1,
@@ -827,78 +846,78 @@ const styles = StyleSheet.create({
   },
 
   headerTitle: {
-  fontSize: 24,
-  fontWeight: "900",
-  color: "#FFFFFF",
-  letterSpacing: -0.5,
-},
+    fontSize: 24,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.5,
+  },
 
-headerSubtitle: {
-  marginTop: 2,
-  fontSize: 11,
-  color: "#ECFFFB",
-  fontWeight: "700",
-  lineHeight: 15,
-},
+  headerSubtitle: {
+    marginTop: 2,
+    fontSize: 11,
+    color: "#ECFFFB",
+    fontWeight: "700",
+    lineHeight: 15,
+  },
 
   profileCard: {
-  marginHorizontal: 18,
-  marginTop: 10,
-  backgroundColor: "#FFFFFF",
-  borderRadius: 24,
-  paddingVertical: 14,
-  paddingHorizontal: 18,
-  alignItems: "center",
-  borderWidth: 1,
-  borderColor: "#E2F8F5",
-  shadowColor: "#0F766E",
-  shadowOpacity: 0.07,
-  shadowRadius: 12,
-  elevation: 3,
-},
+    marginHorizontal: 18,
+    marginTop: 10,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2F8F5",
+    shadowColor: "#0F766E",
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    elevation: 3,
+  },
 
   avatarCircle: {
-  width: 74,
-  height: 74,
-  borderRadius: 37,
-  backgroundColor: "#E0F5F2",
-  alignItems: "center",
-  justifyContent: "center",
-  borderWidth: 3,
-  borderColor: "#B2EEEA",
-  marginBottom: 8,
-},
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    backgroundColor: "#E0F5F2",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 3,
+    borderColor: "#B2EEEA",
+    marginBottom: 8,
+  },
 
-avatarText: {
-  fontSize: 27,
-  fontWeight: "900",
-  color: "#0F766E",
-},
+  avatarText: {
+    fontSize: 27,
+    fontWeight: "900",
+    color: "#0F766E",
+  },
 
   name: {
-  fontSize: 21,
-  fontWeight: "900",
-  color: "#0F172A",
-  letterSpacing: -0.4,
-},
+    fontSize: 21,
+    fontWeight: "900",
+    color: "#0F172A",
+    letterSpacing: -0.4,
+  },
 
-email: {
-  marginTop: 3,
-  fontSize: 12,
-  color: "#64748B",
-  fontWeight: "700",
-},
+  email: {
+    marginTop: 3,
+    fontSize: 12,
+    color: "#64748B",
+    fontWeight: "700",
+  },
 
-editProfileButton: {
-  marginTop: 14,
-  backgroundColor: "#0F766E",
-  paddingHorizontal: 18,
-  paddingVertical: 11,
-  borderRadius: 999,
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 7,
-},
+  editProfileButton: {
+    marginTop: 14,
+    backgroundColor: "#0F766E",
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 999,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
 
   editProfileButtonText: {
     color: "#FFFFFF",
