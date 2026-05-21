@@ -4,7 +4,6 @@ import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
-  GestureResponderEvent,
   Modal,
   ScrollView,
   StatusBar,
@@ -87,6 +86,20 @@ const perfilVazio: PerfilUsuario = {
   clinica: "",
 };
 
+function getPlanoId(planoAtual: PlanoSalvo | null) {
+  return planoAtual?.planoId || planoAtual?.id || "";
+}
+
+function getPlanoNome(planoAtual: PlanoSalvo | null) {
+  const planoId = getPlanoId(planoAtual);
+
+  return (
+    planoAtual?.nome ||
+    PLANOS.find((plano) => plano.id === planoId)?.nome ||
+    "Plano ativo"
+  );
+}
+
 export default function ProfileScreen({ navigation }: any) {
   const [perfil, setPerfil] = useState<PerfilUsuario>(perfilVazio);
   const [perfilTemp, setPerfilTemp] = useState<PerfilUsuario>(perfilVazio);
@@ -136,7 +149,7 @@ export default function ProfileScreen({ navigation }: any) {
   useFocusEffect(
     useCallback(() => {
       carregarDados();
-    }, [carregarDados]),
+    }, [carregarDados])
   );
 
   const perfilCriado = perfil.nome.trim().length > 0;
@@ -152,13 +165,18 @@ export default function ProfileScreen({ navigation }: any) {
       return;
     }
 
+    if (perfilTemp.email.trim() && !perfilTemp.email.includes("@")) {
+      Alert.alert("Atenção", "Digite um e-mail válido.");
+      return;
+    }
+
     try {
       const perfilFormatado: PerfilUsuario = {
         nome: perfilTemp.nome.trim(),
         email: perfilTemp.email.trim(),
         telefone: perfilTemp.telefone.trim(),
         cidade: perfilTemp.cidade.trim(),
-        estado: perfilTemp.estado.trim(),
+        estado: perfilTemp.estado.trim().toUpperCase(),
         clinica: perfilTemp.clinica.trim(),
       };
 
@@ -170,6 +188,39 @@ export default function ProfileScreen({ navigation }: any) {
     } catch {
       Alert.alert("Erro", "Não foi possível salvar o perfil.");
     }
+  }
+
+  async function excluirPerfil() {
+    Alert.alert(
+      "Excluir perfil",
+      "Tem certeza que deseja excluir os dados do seu perfil? Essa ação não remove os pets cadastrados nem o plano ativo.",
+      [
+        {
+          text: "Cancelar",
+          style: "cancel",
+        },
+        {
+          text: "Excluir",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem(PROFILE_KEY);
+
+              setPerfil(perfilVazio);
+              setPerfilTemp(perfilVazio);
+              setModalPerfilVisivel(false);
+
+              Alert.alert(
+                "Perfil excluído",
+                "Os dados do perfil foram removidos com sucesso."
+              );
+            } catch {
+              Alert.alert("Erro", "Não foi possível excluir o perfil.");
+            }
+          },
+        },
+      ]
+    );
   }
 
   async function alterarPlano(plano: PlanoOpcao) {
@@ -195,11 +246,34 @@ export default function ProfileScreen({ navigation }: any) {
 
       Alert.alert(
         "Plano adquirido",
-        `Você agora está usando o plano ${plano.nome} ${cicloPlano}.`,
+        `Você agora está usando o plano ${plano.nome} ${
+          cicloPlano === "mensal" ? "mensal" : "anual"
+        }.`
       );
     } catch {
       Alert.alert("Erro", "Não foi possível alterar o plano.");
     }
+  }
+
+  async function removerPlano() {
+    Alert.alert("Remover plano", "Deseja realmente remover seu plano atual?", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Remover",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await AsyncStorage.removeItem(PLANO_KEY);
+            setPlanoAtual(null);
+            setModalPlanoVisivel(false);
+
+            Alert.alert("Pronto", "Plano removido com sucesso.");
+          } catch {
+            Alert.alert("Erro", "Não foi possível remover o plano.");
+          }
+        },
+      },
+    ]);
   }
 
   function getIniciais() {
@@ -211,27 +285,9 @@ export default function ProfileScreen({ navigation }: any) {
       return partes[0].charAt(0).toUpperCase();
     }
 
-    return `${partes[0].charAt(0)}${partes[partes.length - 1].charAt(0)}`.toUpperCase();
-  }
-
-  async function removerPlano(event: GestureResponderEvent): Promise<void> {
-    // confirma antes de remover
-    Alert.alert("Remover plano", "Deseja realmente remover seu plano atual?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Remover",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await AsyncStorage.removeItem(PLANO_KEY);
-            setPlanoAtual(null);
-            Alert.alert("Pronto", "Plano removido com sucesso.");
-          } catch {
-            Alert.alert("Erro", "Não foi possível remover o plano.");
-          }
-        },
-      },
-    ]);
+    return `${partes[0].charAt(0)}${partes[
+      partes.length - 1
+    ].charAt(0)}`.toUpperCase();
   }
 
   return (
@@ -293,6 +349,7 @@ export default function ProfileScreen({ navigation }: any) {
             <View style={styles.resumeIcon}>
               <Ionicons name="paw-outline" size={24} color="#0F766E" />
             </View>
+
             <Text style={styles.resumeNumber}>{totalPets}</Text>
             <Text style={styles.resumeLabel}>
               {totalPets === 1 ? "pet cadastrado" : "pets cadastrados"}
@@ -307,8 +364,9 @@ export default function ProfileScreen({ navigation }: any) {
                 color="#0F766E"
               />
             </View>
+
             <Text style={styles.resumeNumber}>
-              {planoAtual ? planoAtual.nome : "Sem"}
+              {planoAtual ? getPlanoNome(planoAtual) : "Sem"}
             </Text>
             <Text style={styles.resumeLabel}>plano atual</Text>
           </View>
@@ -360,8 +418,8 @@ export default function ProfileScreen({ navigation }: any) {
 
         <View style={styles.planCard}>
           <View style={styles.planTop}>
-            <View>
-              <Text style={styles.cardTitle}>Plano ClyvoCare</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.planCardTitle}>Plano ClyvoCare</Text>
               <Text style={styles.planSubtitle}>
                 Você pode alterar seu plano quando quiser
               </Text>
@@ -380,7 +438,7 @@ export default function ProfileScreen({ navigation }: any) {
             <View style={styles.currentPlanBox}>
               <Text style={styles.currentPlanLabel}>Plano atual</Text>
               <Text style={styles.currentPlanName}>
-                ClyvoCare {planoAtual.nome}
+                ClyvoCare {getPlanoNome(planoAtual)}
               </Text>
               <Text style={styles.currentPlanPrice}>
                 {planoAtual.preco} /{" "}
@@ -450,7 +508,7 @@ export default function ProfileScreen({ navigation }: any) {
               <Ionicons name="arrow-back" size={22} color="#0F766E" />
             </TouchableOpacity>
 
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.modalTitle}>
                 {perfilCriado ? "Editar perfil" : "Criar perfil"}
               </Text>
@@ -545,6 +603,19 @@ export default function ProfileScreen({ navigation }: any) {
               <Ionicons name="save-outline" size={20} color="#FFFFFF" />
               <Text style={styles.saveButtonText}>Salvar perfil</Text>
             </TouchableOpacity>
+
+            {perfilCriado && (
+              <TouchableOpacity
+                style={styles.deleteProfileButton}
+                onPress={excluirPerfil}
+                activeOpacity={0.9}
+              >
+                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                <Text style={styles.deleteProfileButtonText}>
+                  Excluir perfil
+                </Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </View>
       </Modal>
@@ -560,7 +631,7 @@ export default function ProfileScreen({ navigation }: any) {
               <Ionicons name="arrow-back" size={22} color="#0F766E" />
             </TouchableOpacity>
 
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.modalTitle}>Alterar plano</Text>
               <Text style={styles.modalSubtitle}>
                 Escolha o melhor cuidado para seu pet
@@ -612,7 +683,7 @@ export default function ProfileScreen({ navigation }: any) {
             </View>
 
             {PLANOS.map((plano) => {
-              const planoSelecionado = planoAtual?.id === plano.id;
+              const planoSelecionado = getPlanoId(planoAtual) === plano.id;
               const preco =
                 cicloPlano === "mensal" ? plano.precoMensal : plano.precoAnual;
 
@@ -665,7 +736,11 @@ export default function ProfileScreen({ navigation }: any) {
                       styles.subscribeButton,
                       planoSelecionado && styles.subscribeButtonActive,
                     ]}
-                    onPress={() => alterarPlano(plano)}
+                    onPress={() => {
+                      if (!planoSelecionado) {
+                        alterarPlano(plano);
+                      }
+                    }}
                     activeOpacity={0.9}
                   >
                     <Text style={styles.subscribeButtonText}>
@@ -1041,6 +1116,13 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
 
+  planCardTitle: {
+    fontSize: 19,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+  },
+
   planSubtitle: {
     marginTop: 4,
     color: "#CBD5E1",
@@ -1279,6 +1361,23 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: "#FFFFFF",
     fontSize: 15,
+    fontWeight: "900",
+  },
+
+  deleteProfileButton: {
+    marginTop: 12,
+    backgroundColor: "#FEE2E2",
+    borderRadius: 20,
+    paddingVertical: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+
+  deleteProfileButtonText: {
+    color: "#EF4444",
+    fontSize: 14,
     fontWeight: "900",
   },
 
