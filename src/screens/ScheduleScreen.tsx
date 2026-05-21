@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Modal,
   FlatList,
+  StatusBar,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -103,7 +104,7 @@ export default function ScheduleScreen() {
 
           setTodosPets(lista);
 
-          // Mantém o pet selecionado se ainda existir, senão pega o último
+        
           setPetSelecionado((atual) => {
             if (atual) {
               const aindaExiste = lista.find((p) => p.id === atual.id);
@@ -334,6 +335,9 @@ export default function ScheduleScreen() {
 
   return (
     <>
+
+      <StatusBar barStyle="dark-content" backgroundColor="#F3FAFA" />
+
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View>
