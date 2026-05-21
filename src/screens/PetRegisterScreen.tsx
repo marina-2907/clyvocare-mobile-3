@@ -911,8 +911,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
       await AsyncStorage.setItem(PETS_KEY, JSON.stringify(pets));
 
-      console.log("PET SALVO COM SUCESSO:", novoPet);
-      console.log("TOTAL DE PETS:", pets.length);
+     
 
       setSalvando(false);
 
@@ -922,7 +921,6 @@ export default function PetRegisterScreen({ navigation, route }: any) {
         navigation.navigate("Home");
       }
     } catch (erro: any) {
-      console.log("ERRO AO SALVAR PET:", erro);
 
       setSalvando(false);
 
@@ -1331,7 +1329,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Castração</Text>
           <Text style={styles.sectionSub}>
-            Informe se o pet ja é castrado ou não
+            Informe se o pet já é castrado ou não
           </Text>
 
           <View style={styles.optionList}>
