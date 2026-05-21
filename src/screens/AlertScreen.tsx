@@ -102,9 +102,9 @@ export default function IAScreen({ navigation }: any) {
 
   const petSelecionado = pets.find((pet) => pet.id === petSelecionadoId);
 
-  const historicoDoPet = historico.filter(
-    (item) => item.petId === petSelecionadoId
-  );
+  const historicoDoPet = useMemo(() => {
+  return historico.filter((item) => item.petId === petSelecionadoId);
+}, [historico, petSelecionadoId]);
 
   const alertasGerados = useMemo(() => {
     if (!petSelecionado) return [];
