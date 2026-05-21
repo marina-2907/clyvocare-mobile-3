@@ -127,17 +127,29 @@ function calcularScore(pet: Pet) {
   const totalVacinas = vacinas.length;
   const vacinasEmDia = vacinas.filter((v) => v.emDia).length;
 
-  const pontosVacina = totalVacinas > 0 ? Math.round((vacinasEmDia / totalVacinas) * 40) : 25;
+  const pontosVacina =
+    totalVacinas > 0 ? Math.round((vacinasEmDia / totalVacinas) * 40) : 25;
   const pontosPeso = pet.peso?.trim() ? 10 : 5;
   const idadeNum = parseInt(pet.idade || "0", 10);
-  const pontosIdade = !idadeNum ? 7 : idadeNum >= 12 ? 6 : idadeNum >= 8 ? 8 : 12;
-  const pontosDocumento = temDocumentacao(pet.especieId) ? (pet.documentoAnimal ? 12 : 6) : 8;
+  const pontosIdade = !idadeNum
+    ? 7
+    : idadeNum >= 12
+      ? 6
+      : idadeNum >= 8
+        ? 8
+        : 12;
+  const pontosDocumento = temDocumentacao(pet.especieId)
+    ? pet.documentoAnimal
+      ? 12
+      : 6
+    : 8;
 
   let penalidadeSituacao = 0;
 
   if (usaSituacaoVacinal(pet.especieId)) {
     if (pet.situacaoVacinal === "sem_carteirinha") penalidadeSituacao = 7;
-    if (pet.situacaoVacinal === "historico_desconhecido") penalidadeSituacao = 12;
+    if (pet.situacaoVacinal === "historico_desconhecido")
+      penalidadeSituacao = 12;
     if (pet.situacaoVacinal === "resgatado") penalidadeSituacao = 15;
   }
 
@@ -146,7 +158,14 @@ function calcularScore(pet: Pet) {
     penalidadeCastracao = 4;
   }
 
-  const score = 35 + pontosVacina + pontosPeso + pontosIdade + pontosDocumento - penalidadeSituacao - penalidadeCastracao;
+  const score =
+    35 +
+    pontosVacina +
+    pontosPeso +
+    pontosIdade +
+    pontosDocumento -
+    penalidadeSituacao -
+    penalidadeCastracao;
   return Math.max(20, Math.min(100, Math.round(score)));
 }
 
@@ -156,12 +175,13 @@ function getScoreColor(score: number) {
   return "#EF4444";
 }
 
-
 function getSituacaoTexto(pet: Pet) {
   if (!usaSituacaoVacinal(pet.especieId)) return "Cuidados preventivos";
-  if (pet.situacaoVacinal === "com_carteirinha") return "Carteirinha disponível";
+  if (pet.situacaoVacinal === "com_carteirinha")
+    return "Carteirinha disponível";
   if (pet.situacaoVacinal === "sem_carteirinha") return "Sem carteirinha";
-  if (pet.situacaoVacinal === "historico_desconhecido") return "Histórico desconhecido";
+  if (pet.situacaoVacinal === "historico_desconhecido")
+    return "Histórico desconhecido";
   if (pet.situacaoVacinal === "resgatado") return "Pet resgatado";
   return "Situação não informada";
 }
@@ -190,13 +210,6 @@ export default function PetsScreen({ navigation }: any) {
 
       setPets(listaValida);
       setHomePetId(idHomeFinal);
-
-      console.log("PETS CARREGADOS NA TELA PETS:", listaValida);
-      console.log("PET ATUAL DA HOME:", idHomeFinal);
-    } catch (erro) {
-      console.log("ERRO AO CARREGAR PETS:", erro);
-      setPets([]);
-      setHomePetId(null);
     } finally {
       setCarregando(false);
     }
@@ -205,13 +218,16 @@ export default function PetsScreen({ navigation }: any) {
   useFocusEffect(
     useCallback(() => {
       carregarDados();
-    }, [carregarDados])
+    }, [carregarDados]),
   );
 
   async function colocarPetNaHome(pet: Pet) {
     try {
       if (!pet.id) {
-        Alert.alert("Erro", "Esse pet está sem ID e não pode ser colocado na Home.");
+        Alert.alert(
+          "Erro",
+          "Esse pet está sem ID e não pode ser colocado na Home.",
+        );
         return;
       }
 
@@ -291,24 +307,24 @@ export default function PetsScreen({ navigation }: any) {
       showsVerticalScrollIndicator={false}
     >
       <StatusBar barStyle="dark-content" backgroundColor="#F6FBFA" />
-<View style={styles.header}>
-  <View style={styles.headerTextBox}>
-    <Text style={styles.pageTitle}>Meus Pets</Text>
+      <View style={styles.header}>
+        <View style={styles.headerTextBox}>
+          <Text style={styles.pageTitle}>Meus Pets</Text>
 
-    <Text style={styles.pageSubtitle}>
-      Organize os perfis dos pets aqui.
-    </Text>
-  </View>
+          <Text style={styles.pageSubtitle}>
+            Gerencie seus pets, escolha quem aparece na Home e acompanhe os
+            principais dados de saúde.
+          </Text>
+        </View>
 
-  <TouchableOpacity
-    style={styles.addButton}
-    onPress={() => navigation.navigate("Cadastrar Pet")}
-    activeOpacity={0.85}
-  >
-    <Ionicons name="add" size={24} color="#FFFFFF" />
-  </TouchableOpacity>
-</View>
-
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => navigation.navigate("Cadastrar Pet")}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add" size={24} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
 
       {carregando && (
         <View style={styles.emptyBox}>
@@ -324,8 +340,8 @@ export default function PetsScreen({ navigation }: any) {
 
           <Text style={styles.emptyTitle}>Nenhum pet cadastrado</Text>
           <Text style={styles.emptyText}>
-            Cadastre o primeiro pet para ele aparecer aqui e depois escolher qual
-            ficará em destaque na Home.
+            Cadastre o primeiro pet para ele aparecer aqui e depois escolher
+            qual ficará em destaque na Home.
           </Text>
 
           <TouchableOpacity
@@ -371,7 +387,9 @@ export default function PetsScreen({ navigation }: any) {
 
               <View style={styles.petInfo}>
                 <View style={styles.petNameRow}>
-                  <Text style={styles.petName}>{pet.nome || "Pet sem nome"}</Text>
+                  <Text style={styles.petName}>
+                    {pet.nome || "Pet sem nome"}
+                  </Text>
 
                   {isHomePet && (
                     <View style={styles.homeBadge}>
@@ -386,9 +404,15 @@ export default function PetsScreen({ navigation }: any) {
 
                 <View style={styles.metaRow}>
                   <View style={styles.metaPill}>
-                    <Ionicons name="time-outline" size={13} color="#0F766E" />
+                    <MaterialCommunityIcons
+                      name="weight-kilogram"
+                      size={13}
+                      color="#0F766E"
+                    />
                     <Text style={styles.metaText}>
-                      {pet.idade ? `${pet.idade} anos` : "Idade não informada"}
+                      {pet.peso
+                        ? `${pet.peso} ${pet.unidadePeso || "kg"}`
+                        : "Peso não informado"}
                     </Text>
                   </View>
                 </View>
@@ -412,14 +436,18 @@ export default function PetsScreen({ navigation }: any) {
 
               <View style={styles.detailCardWide}>
                 <Text style={styles.detailLabel}>Status</Text>
-                <Text style={styles.detailValueSmall}>{getSituacaoTexto(pet)}</Text>
+                <Text style={styles.detailValueSmall}>
+                  {getSituacaoTexto(pet)}
+                </Text>
               </View>
             </View>
 
             {temDocumentacao(pet.especieId) && (
               <View style={styles.documentRow}>
                 <Ionicons
-                  name={pet.documentoAnimal ? "folder-open" : "folder-open-outline"}
+                  name={
+                    pet.documentoAnimal ? "folder-open" : "folder-open-outline"
+                  }
                   size={16}
                   color={pet.documentoAnimal ? "#0F766E" : "#94A3B8"}
                 />
@@ -438,9 +466,15 @@ export default function PetsScreen({ navigation }: any) {
 
             <View style={styles.actionsRow}>
               <TouchableOpacity
-                style={[styles.homeButton, isHomePet && styles.homeButtonActive]}
-                onPress={() => colocarPetNaHome(pet)}
-                activeOpacity={0.9}
+                style={[
+                  styles.homeButton,
+                  isHomePet && styles.homeButtonActive,
+                ]}
+                onPress={() => {
+                  if (!isHomePet) {
+                    colocarPetNaHome(pet);
+                  }
+                }}
               >
                 <Ionicons
                   name={isHomePet ? "home" : "home-outline"}
@@ -493,14 +527,14 @@ const styles = StyleSheet.create({
   },
 
   header: {
-  position: "relative",
-  marginBottom: 20,
-  paddingRight: 64,
-},
+    position: "relative",
+    marginBottom: 20,
+    paddingRight: 64,
+  },
 
-headerTextBox: {
-  paddingRight: 10,
-},
+  headerTextBox: {
+    paddingRight: 10,
+  },
 
   title: {
     fontSize: 31,
@@ -519,35 +553,33 @@ headerTextBox: {
   },
 
   pageTitle: {
-  fontSize: 31,
-  fontWeight: "900",
-  color: "#00796B",
-  letterSpacing: -0.8,
-  lineHeight: 36,
-},
+    fontSize: 31,
+    fontWeight: "900",
+    color: "#00796B",
+    letterSpacing: -0.8,
+    lineHeight: 36,
+  },
 
-
-pageSubtitle: {
-  marginTop: 8,
-  fontSize: 16,
-  fontWeight: "800",
-  color: "#64748B",
-  lineHeight: 24,
-},
+  pageSubtitle: {
+    marginTop: 8,
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#64748B",
+    lineHeight: 24,
+  },
 
   addButton: {
-  position: "absolute",
-  right: 0,
-  top: 4,
-  width: 48,
-  height: 48,
-  borderRadius: 24,
-  backgroundColor: "#00796B",
-  alignItems: "center",
-  justifyContent: "center",
-},
+    position: "absolute",
+    right: 0,
+    top: 4,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#00796B",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
- 
   homeInfoTitle: {
     fontSize: 14,
     fontWeight: "900",
