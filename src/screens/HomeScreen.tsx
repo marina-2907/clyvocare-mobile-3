@@ -132,7 +132,7 @@ const CUIDADOS = [
 
 const ACESSO_RAPIDO = [
   { label: "Agenda", icon: "calendar-outline", screen: "Agenda" },
-  { label: "Histórico", icon: "document-text-outline", screen: "Historico" },
+  { label: "Histórico", icon: "document-text-outline", screen: "Histórico" },
   { label: "Alertas IA", icon: "notifications-outline", screen: "IA" },
   { label: "Meus Pets", icon: "paw-outline", screen: "Pets" },
 ];
