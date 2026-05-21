@@ -86,7 +86,7 @@ export default function HistoryScreen({ navigation }: any) {
   useFocusEffect(
     useCallback(() => {
       carregarDados();
-    }, [carregarDados])
+    }, [carregarDados]),
   );
 
   const petSelecionado = pets.find((pet) => pet.id === petSelecionadoId);
@@ -126,8 +126,10 @@ export default function HistoryScreen({ navigation }: any) {
       return;
     }
 
-    if (!data.trim()) {
-      Alert.alert("Atenção", "Digite a data do registro.");
+    const dataValida = /^\d{2}\/\d{2}\/\d{4}$/.test(data.trim());
+
+    if (!dataValida) {
+      Alert.alert("Atenção", "Digite a data no formato DD/MM/AAAA.");
       return;
     }
 
@@ -176,7 +178,7 @@ export default function HistoryScreen({ navigation }: any) {
           const novoHistorico = historico.filter((item) => item.id !== id);
           await AsyncStorage.setItem(
             HISTORICO_KEY,
-            JSON.stringify(novoHistorico)
+            JSON.stringify(novoHistorico),
           );
           setHistorico(novoHistorico);
         },
@@ -236,7 +238,7 @@ export default function HistoryScreen({ navigation }: any) {
               <View style={styles.petSelectorTop}>
                 <View style={styles.petIconBox}>
                   <MaterialCommunityIcons
-                    name="dog"
+                    name={getIconePet(petSelecionado?.especieId)}
                     size={28}
                     color="#00796B"
                   />
@@ -386,16 +388,20 @@ export default function HistoryScreen({ navigation }: any) {
                         </View>
 
                         <Text style={styles.historyTitle}>{item.titulo}</Text>
-                        <Text style={styles.historyDesc}>
-                          {item.descricao}
-                        </Text>
+                        <Text style={styles.historyDesc}>{item.descricao}</Text>
                       </View>
 
-                      <View style={styles.historyScore}>
-                        <Text style={styles.historyScoreText}>
-                          {item.scoreSaude}%
-                        </Text>
-                      </View>
+                      <TouchableOpacity
+                        style={styles.deleteHistoryButton}
+                        onPress={() => excluirRegistro(item.id)}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={17}
+                          color="#EF4444"
+                        />
+                      </TouchableOpacity>
                     </TouchableOpacity>
                   ))
               )}
@@ -437,7 +443,10 @@ export default function HistoryScreen({ navigation }: any) {
                 return (
                   <TouchableOpacity
                     key={item.id}
-                    style={[styles.tipoButton, ativo && styles.tipoButtonActive]}
+                    style={[
+                      styles.tipoButton,
+                      ativo && styles.tipoButtonActive,
+                    ]}
                     onPress={() => setTipo(item.id)}
                     activeOpacity={0.85}
                   >
@@ -478,7 +487,23 @@ export default function HistoryScreen({ navigation }: any) {
               label="Data"
               placeholder="Ex: 19/05/2026"
               value={data}
-              onChangeText={setData}
+              onChangeText={(text) => {
+                const apenasNumeros = text.replace(/\D/g, "").slice(0, 8);
+
+                let dataFormatada = apenasNumeros;
+
+                if (apenasNumeros.length > 2) {
+                  dataFormatada = `${apenasNumeros.slice(0, 2)}/${apenasNumeros.slice(2)}`;
+                }
+
+                if (apenasNumeros.length > 4) {
+                  dataFormatada = `${apenasNumeros.slice(0, 2)}/${apenasNumeros.slice(2, 4)}/${apenasNumeros.slice(4)}`;
+                }
+
+                setData(dataFormatada);
+              }}
+              keyboardType="numeric"
+              maxLength={10}
             />
 
             <InputField
@@ -534,7 +559,7 @@ function GraficoSaude({ dados }: { dados: HistoricoPet[] }) {
           </View>
 
           <View style={styles.chartBadge}>
-            <Text style={styles.chartBadgeText}>--%</Text>
+            <Text style={styles.chartBadgeText}>--</Text>
           </View>
         </View>
 
@@ -555,16 +580,14 @@ function GraficoSaude({ dados }: { dados: HistoricoPet[] }) {
         Math.max(dadosOrdenados.length - 1, 1);
 
     const y =
-      altura -
-      padding -
-      (item.scoreSaude / 100) * (altura - padding * 2);
+      altura - padding - (item.scoreSaude / 100) * (altura - padding * 2);
 
     return { x, y, score: item.scoreSaude };
   });
 
   const path = pontos
     .map((ponto, index) =>
-      index === 0 ? `M ${ponto.x} ${ponto.y}` : `L ${ponto.x} ${ponto.y}`
+      index === 0 ? `M ${ponto.x} ${ponto.y}` : `L ${ponto.x} ${ponto.y}`,
     )
     .join(" ");
 
@@ -634,13 +657,7 @@ function GraficoSaude({ dados }: { dados: HistoricoPet[] }) {
         />
 
         {pontos.map((ponto, index) => (
-          <Circle
-            key={index}
-            cx={ponto.x}
-            cy={ponto.y}
-            r="6"
-            fill="#00796B"
-          />
+          <Circle key={index} cx={ponto.x} cy={ponto.y} r="6" fill="#00796B" />
         ))}
       </Svg>
     </View>
@@ -703,6 +720,45 @@ function InputField({
   );
 }
 
+function getIconePet(
+  especieId?: string,
+): keyof typeof MaterialCommunityIcons.glyphMap {
+  switch (especieId) {
+    case "cachorro":
+      return "dog";
+    case "gato":
+      return "cat";
+    case "coelho":
+      return "rabbit";
+    case "cobra":
+      return "snake";
+    case "lagarto":
+      return "bug";
+    case "ave":
+      return "bird";
+    case "peixe":
+      return "fish";
+    case "tartaruga":
+    case "jabuti":
+      return "turtle";
+    case "porco":
+    case "miniporco":
+      return "pig";
+    case "vaca":
+    case "minivaca":
+      return "cow";
+    case "cabra":
+      return "sheep";
+    case "hamster":
+    case "porquinho":
+    case "rato":
+    case "chinchila":
+      return "rodent";
+    default:
+      return "paw";
+  }
+}
+
 function getTipoLabel(tipo: TipoHistorico) {
   switch (tipo) {
     case "consulta":
@@ -718,7 +774,9 @@ function getTipoLabel(tipo: TipoHistorico) {
   }
 }
 
-function getTipoIcon(tipo: TipoHistorico): keyof typeof MaterialCommunityIcons.glyphMap {
+function getTipoIcon(
+  tipo: TipoHistorico,
+): keyof typeof MaterialCommunityIcons.glyphMap {
   switch (tipo) {
     case "consulta":
       return "stethoscope";
@@ -1295,4 +1353,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900",
   },
+  deleteHistoryButton: {
+  width: 34,
+  height: 34,
+  borderRadius: 17,
+  backgroundColor: "#FEF2F2",
+  alignItems: "center",
+  justifyContent: "center",
+},
+
 });
