@@ -958,9 +958,6 @@ export default function HomeScreen({ navigation }: any) {
         }
       }
 
-      console.log("PETS CARREGADOS NA HOME:", pets);
-      console.log("PET ESCOLHIDO PARA HOME:", homePetId);
-
       let petDaHome: Pet | null = null;
 
       if (homePetId) {
