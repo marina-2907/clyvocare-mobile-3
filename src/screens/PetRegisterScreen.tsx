@@ -52,7 +52,7 @@ function usaSituacaoVacinalDaEspecie(especieId?: string | null) {
 }
 
 function getTipoDocumentacaoDaEspecie(
-  especieId?: string | null
+  especieId?: string | null,
 ): TipoDocumentacao {
   if (
     especieId === "tartaruga" ||
@@ -120,9 +120,11 @@ function getInfoDocumentacao(especieId?: string | null) {
 
 function normalizarPesoSalvo(
   pesoSalvo?: string | null,
-  unidadeSalva?: "kg" | "g"
+  unidadeSalva?: "kg" | "g",
 ) {
-  const valorOriginal = String(pesoSalvo || "").trim().toLowerCase();
+  const valorOriginal = String(pesoSalvo || "")
+    .trim()
+    .toLowerCase();
 
   let unidadeFinal: "kg" | "g" = unidadeSalva || "kg";
 
@@ -132,10 +134,7 @@ function normalizarPesoSalvo(
     unidadeFinal = "g";
   }
 
-  const pesoLimpo = valorOriginal
-    .replace(/kg/g, "")
-    .replace(/g/g, "")
-    .trim();
+  const pesoLimpo = valorOriginal.replace(/kg/g, "").replace(/g/g, "").trim();
 
   return {
     peso: pesoLimpo,
@@ -289,7 +288,12 @@ const ESPECIES: Especie[] = [
     label: "Furão",
     icone: "paw",
     racas: ["Furão-europeu", "Furão-doméstico", "Furão albino"],
-    vacinasPadrao: ["Antirrábica", "Cinomose", "Vermífugo", "Check-up semestral"],
+    vacinasPadrao: [
+      "Antirrábica",
+      "Cinomose",
+      "Vermífugo",
+      "Check-up semestral",
+    ],
   },
   {
     id: "rato",
@@ -326,7 +330,12 @@ const ESPECIES: Especie[] = [
       "Manon",
       "Rouxinol",
     ],
-    vacinasPadrao: ["Newcastle", "Bouba Aviária", "Vermífugo", "Check-up semestral"],
+    vacinasPadrao: [
+      "Newcastle",
+      "Bouba Aviária",
+      "Vermífugo",
+      "Check-up semestral",
+    ],
     labelRaca: "Qual ave?",
   },
   {
@@ -384,7 +393,13 @@ const ESPECIES: Especie[] = [
     label: "Vaca",
     icone: "cow",
     racas: ["Nelore", "Gir", "Girolando", "Holstein", "Jersey", "Angus"],
-    vacinasPadrao: ["Febre Aftosa", "Brucelose", "Raiva", "Botulismo", "Vermífugo"],
+    vacinasPadrao: [
+      "Febre Aftosa",
+      "Brucelose",
+      "Raiva",
+      "Botulismo",
+      "Vermífugo",
+    ],
   },
   {
     id: "minivaca",
@@ -405,7 +420,12 @@ const ESPECIES: Especie[] = [
     label: "Cabra",
     icone: "sheep",
     racas: ["Saanen", "Toggenburg", "Anglo-nubiana", "Boer", "Cabra SRD"],
-    vacinasPadrao: ["Febre Aftosa", "Carbúnculo Sintomático", "Pneumonia", "Vermífugo"],
+    vacinasPadrao: [
+      "Febre Aftosa",
+      "Carbúnculo Sintomático",
+      "Pneumonia",
+      "Vermífugo",
+    ],
   },
   {
     id: "cobra",
@@ -561,7 +581,7 @@ export function calcularScoreSaude({
   ];
 
   const temHistoricoClinico = palavrasDeAtencao.some((palavra) =>
-    textoObs.includes(palavra)
+    textoObs.includes(palavra),
   );
 
   const penalidadeHistorico = temHistoricoClinico ? 8 : 0;
@@ -584,7 +604,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
   const [nome, setNome] = useState("");
   const [especieSelecionada, setEspecieSelecionada] = useState<Especie | null>(
-    null
+    null,
   );
   const [raca, setRaca] = useState("");
   const [racaCustom, setRacaCustom] = useState("");
@@ -604,8 +624,12 @@ export default function PetRegisterScreen({ navigation, route }: any) {
   const [modalEspecie, setModalEspecie] = useState(false);
   const [modalRaca, setModalRaca] = useState(false);
 
-  const podeInformarCastracao = permiteCastracaoDaEspecie(especieSelecionada?.id);
-  const usaSituacaoVacinal = usaSituacaoVacinalDaEspecie(especieSelecionada?.id);
+  const podeInformarCastracao = permiteCastracaoDaEspecie(
+    especieSelecionada?.id,
+  );
+  const usaSituacaoVacinal = usaSituacaoVacinalDaEspecie(
+    especieSelecionada?.id,
+  );
   const documentacaoInfo = getInfoDocumentacao(especieSelecionada?.id);
   const podeInformarDocumentacao = !!documentacaoInfo;
   const soUsaGramas = ESPECIE_SO_GRAMAS.includes(especieSelecionada?.id || "");
@@ -634,15 +658,15 @@ export default function PetRegisterScreen({ navigation, route }: any) {
     scoreFinal >= 85
       ? "Muito saudável"
       : scoreFinal >= 65
-      ? "Acompanhar"
-      : "Atenção";
+        ? "Acompanhar"
+        : "Atenção";
 
   const scoreDescricao =
     scoreFinal >= 85
-      ? "O cadastro está completo e os cuidados parecem em dia."
+      ? "O score é atualizado conforme você preenche os dados do pet."
       : scoreFinal >= 65
-      ? "Alguns dados ainda precisam de revisão preventiva."
-      : "Recomendamos avaliação veterinária e revisão do histórico de saúde.";
+        ? "Complete peso, vacinas, documentos e histórico para melhorar a análise."
+        : "A IA recomenda revisar os dados e priorizar avaliação veterinária.";
 
   useEffect(() => {
     async function loadPet() {
@@ -656,12 +680,12 @@ export default function PetRegisterScreen({ navigation, route }: any) {
         if (pet) {
           const pesoNormalizado = normalizarPesoSalvo(
             pet.peso,
-            pet.unidadePeso
+            pet.unidadePeso,
           );
 
           setNome(pet.nome || "");
           setEspecieSelecionada(
-            ESPECIES.find((e) => e.id === pet.especieId) || null
+            ESPECIES.find((e) => e.id === pet.especieId) || null,
           );
           setRaca(pet.raca || "");
           setRacaCustom("");
@@ -717,18 +741,19 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
   async function escolherCarteiraVacina() {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (status !== "granted") {
         Alert.alert(
           "Permissão necessária",
-          "Precisamos de acesso à galeria para anexar a carteirinha de vacinação."
+          "Precisamos de acesso à galeria para anexar a carteirinha de vacinação.",
         );
         return;
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         allowsEditing: false,
         quality: 0.5,
       });
@@ -747,12 +772,13 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
   async function escolherDocumentoAnimal() {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (status !== "granted") {
         Alert.alert(
           "Permissão necessária",
-          "Precisamos de acesso à galeria para anexar o documento do animal."
+          "Precisamos de acesso à galeria para anexar o documento do animal.",
         );
         return;
       }
@@ -789,7 +815,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
           style: "destructive",
           onPress: () => setCarteiraVacina(null),
         },
-      ]
+      ],
     );
   }
 
@@ -807,7 +833,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
           style: "destructive",
           onPress: () => setDocumentoAnimal(null),
         },
-      ]
+      ],
     );
   }
 
@@ -829,28 +855,37 @@ export default function PetRegisterScreen({ navigation, route }: any) {
       Alert.alert("Atenção", "Por favor, selecione o tipo de animal.");
       return;
     }
-
-    // Validação de peso por espécie
+    if (!peso.trim()) {
+      Alert.alert(
+        "Atenção",
+        "Por favor, informe o peso do pet para calcular melhor o score de saúde.",
+      );
+      return;
+    }
     const pesoLimpoValidacao = peso
       .replace(/kg/gi, "")
       .replace(/g/gi, "")
       .trim();
 
-    if (pesoLimpoValidacao) {
-      const pesoNum = parseFloat(pesoLimpoValidacao.replace(",", "."));
+    const pesoNum = parseFloat(pesoLimpoValidacao.replace(",", "."));
 
-      if (!isNaN(pesoNum) && pesoNum > 0) {
-        const limiteKg = PESO_MAX_KG[especieSelecionada.id];
-        const pesoEmKg = unidadePeso === "g" ? pesoNum / 1000 : pesoNum;
+    if (isNaN(pesoNum) || pesoNum <= 0) {
+      Alert.alert(
+        "Peso inválido",
+        "Informe um peso maior que zero para continuar o cadastro.",
+      );
+      return;
+    }
 
-        if (limiteKg !== undefined && pesoEmKg > limiteKg) {
-          Alert.alert(
-            "Peso incomum ⚠️",
-            `O peso informado (${pesoLimpoValidacao}${unidadePeso}) parece muito alto para um ${especieSelecionada.label}. Verifique se a unidade está correta.`
-          );
-          return;
-        }
-      }
+    const limiteKg = PESO_MAX_KG[especieSelecionada.id];
+    const pesoEmKg = unidadePeso === "g" ? pesoNum / 1000 : pesoNum;
+
+    if (limiteKg !== undefined && pesoEmKg > limiteKg) {
+      Alert.alert(
+        "Peso incomum",
+        `O peso informado (${pesoLimpoValidacao}${unidadePeso}) parece muito alto para um ${especieSelecionada.label}. Verifique se a unidade está correta.`,
+      );
+      return;
     }
 
     setSalvando(true);
@@ -869,10 +904,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
       }
 
       const racaFinal = racaCustom.trim() || raca;
-      const pesoLimpo = peso
-        .replace(/kg/gi, "")
-        .replace(/g/gi, "")
-        .trim();
+      const pesoLimpo = peso.replace(/kg/gi, "").replace(/g/gi, "").trim();
 
       const novoPet: Pet = {
         id: petId || Date.now().toString(),
@@ -887,7 +919,9 @@ export default function PetRegisterScreen({ navigation, route }: any) {
         documentoAnimal: getTipoDocumentacaoDaEspecie(especieSelecionada.id)
           ? documentoAnimal
           : null,
-        observacoesDocumento: getTipoDocumentacaoDaEspecie(especieSelecionada.id)
+        observacoesDocumento: getTipoDocumentacaoDaEspecie(
+          especieSelecionada.id,
+        )
           ? observacoesDocumento.trim()
           : "",
         situacaoVacinal: usaSituacaoVacinalDaEspecie(especieSelecionada.id)
@@ -911,8 +945,6 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
       await AsyncStorage.setItem(PETS_KEY, JSON.stringify(pets));
 
-     
-
       setSalvando(false);
 
       if (navigation.canGoBack()) {
@@ -921,13 +953,12 @@ export default function PetRegisterScreen({ navigation, route }: any) {
         navigation.navigate("Home");
       }
     } catch (erro: any) {
-
       setSalvando(false);
 
       Alert.alert(
         "Erro ao salvar",
         erro?.message ||
-          "Não foi possível salvar o pet. Tente cadastrar sem foto e sem carteirinha primeiro."
+          "Não foi possível salvar o pet. Tente cadastrar sem foto e sem carteirinha primeiro.",
       );
     }
   }
@@ -1002,7 +1033,9 @@ export default function PetRegisterScreen({ navigation, route }: any) {
           <Ionicons name="arrow-back" size={20} color="#0F766E" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>{petId ? "Editar Pet" : "Novo Pet"}</Text>
+        <Text style={styles.headerTitle}>
+          {petId ? "Editar Pet" : "Novo Pet"}
+        </Text>
 
         {petId ? (
           <TouchableOpacity
@@ -1023,9 +1056,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
             <View style={styles.fotoPlaceholder}>
               <MaterialCommunityIcons
                 name={
-                  especieSelecionada
-                    ? (especieSelecionada.icone as any)
-                    : "paw"
+                  especieSelecionada ? (especieSelecionada.icone as any) : "paw"
                 }
                 size={52}
                 color="#0F9D8E"
@@ -1044,7 +1075,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
         <View style={styles.scorePreview}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.scoreTitle}>Score inteligente de saúde</Text>
+            <Text style={styles.scoreTitle}>Score inteligente em tempo real</Text>
             <Text style={styles.scoreSub}>{scoreDescricao}</Text>
 
             <View style={styles.scoreDetails}>
@@ -1068,7 +1099,9 @@ export default function PetRegisterScreen({ navigation, route }: any) {
                     size={14}
                     color="#0F766E"
                   />
-                  <Text style={styles.scoreMiniText}>{getSituacaoTitulo()}</Text>
+                  <Text style={styles.scoreMiniText}>
+                    {getSituacaoTitulo()}
+                  </Text>
                 </View>
               ) : (
                 <View style={styles.scoreMiniItem}>
@@ -1080,15 +1113,23 @@ export default function PetRegisterScreen({ navigation, route }: any) {
               {podeInformarCastracao && (
                 <View style={styles.scoreMiniItem}>
                   <Ionicons name="heart-outline" size={14} color="#0F766E" />
-                  <Text style={styles.scoreMiniText}>{getCastracaoTitulo()}</Text>
+                  <Text style={styles.scoreMiniText}>
+                    {getCastracaoTitulo()}
+                  </Text>
                 </View>
               )}
 
               {podeInformarDocumentacao && documentacaoInfo && (
                 <View style={styles.scoreMiniItem}>
-                  <Ionicons name="folder-open-outline" size={14} color="#0F766E" />
+                  <Ionicons
+                    name="folder-open-outline"
+                    size={14}
+                    color="#0F766E"
+                  />
                   <Text style={styles.scoreMiniText}>
-                    {documentoAnimal ? "Documento anexado" : documentacaoInfo.titulo}
+                    {documentoAnimal
+                      ? "Documento anexado"
+                      : documentacaoInfo.titulo}
                   </Text>
                 </View>
               )}
@@ -1341,7 +1382,11 @@ export default function PetRegisterScreen({ navigation, route }: any) {
               onPress={() => setCastracao("castrado")}
               activeOpacity={0.85}
             >
-              <Ionicons name="checkmark-circle-outline" size={22} color="#0F766E" />
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={22}
+                color="#0F766E"
+              />
               <View style={{ flex: 1 }}>
                 <Text style={styles.optionTitle}>Sim, é castrado</Text>
                 <Text style={styles.optionText}>
@@ -1409,7 +1454,11 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
                 <View style={styles.carteiraInfo}>
                   <View style={styles.carteiraIconActive}>
-                    <Ionicons name="checkmark-circle" size={22} color="#0F766E" />
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={22}
+                      color="#0F766E"
+                    />
                   </View>
 
                   <View style={{ flex: 1 }}>
@@ -1423,10 +1472,16 @@ export default function PetRegisterScreen({ navigation, route }: any) {
             ) : (
               <View style={styles.carteiraEmpty}>
                 <View style={styles.carteiraIcon}>
-                  <Ionicons name="folder-open-outline" size={28} color="#0F766E" />
+                  <Ionicons
+                    name="folder-open-outline"
+                    size={28}
+                    color="#0F766E"
+                  />
                 </View>
 
-                <Text style={styles.carteiraTitle}>Anexar documento do animal</Text>
+                <Text style={styles.carteiraTitle}>
+                  Anexar documento do animal
+                </Text>
                 <Text style={styles.carteiraSub}>
                   Envie uma foto do documento, se o tutor possuir.
                 </Text>
@@ -1471,12 +1526,17 @@ export default function PetRegisterScreen({ navigation, route }: any) {
               <TouchableOpacity
                 style={[
                   styles.optionCard,
-                  situacaoVacinal === "com_carteirinha" && styles.optionCardActive,
+                  situacaoVacinal === "com_carteirinha" &&
+                    styles.optionCardActive,
                 ]}
                 onPress={() => setSituacaoVacinal("com_carteirinha")}
                 activeOpacity={0.85}
               >
-                <Ionicons name="document-attach-outline" size={22} color="#0F766E" />
+                <Ionicons
+                  name="document-attach-outline"
+                  size={22}
+                  color="#0F766E"
+                />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.optionTitle}>Tenho a carteirinha</Text>
                   <Text style={styles.optionText}>
@@ -1488,16 +1548,24 @@ export default function PetRegisterScreen({ navigation, route }: any) {
               <TouchableOpacity
                 style={[
                   styles.optionCard,
-                  situacaoVacinal === "sem_carteirinha" && styles.optionCardActive,
+                  situacaoVacinal === "sem_carteirinha" &&
+                    styles.optionCardActive,
                 ]}
                 onPress={() => setSituacaoVacinal("sem_carteirinha")}
                 activeOpacity={0.85}
               >
-                <Ionicons name="help-circle-outline" size={22} color="#D97706" />
+                <Ionicons
+                  name="help-circle-outline"
+                  size={22}
+                  color="#D97706"
+                />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.optionTitle}>Não tenho a carteirinha</Text>
+                  <Text style={styles.optionTitle}>
+                    Não tenho a carteirinha
+                  </Text>
                   <Text style={styles.optionText}>
-                    O app recomenda avaliação para revisar ou reiniciar o protocolo.
+                    O app recomenda avaliação para revisar ou reiniciar o
+                    protocolo.
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -1511,7 +1579,11 @@ export default function PetRegisterScreen({ navigation, route }: any) {
                 onPress={() => setSituacaoVacinal("historico_desconhecido")}
                 activeOpacity={0.85}
               >
-                <Ionicons name="alert-circle-outline" size={22} color="#EA580C" />
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={22}
+                  color="#EA580C"
+                />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.optionTitle}>Não sei o histórico</Text>
                   <Text style={styles.optionText}>
@@ -1528,11 +1600,18 @@ export default function PetRegisterScreen({ navigation, route }: any) {
                 onPress={() => setSituacaoVacinal("resgatado")}
                 activeOpacity={0.85}
               >
-                <Ionicons name="heart-circle-outline" size={22} color="#EF4444" />
+                <Ionicons
+                  name="heart-circle-outline"
+                  size={22}
+                  color="#EF4444"
+                />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.optionTitle}>Pet resgatado recentemente</Text>
+                  <Text style={styles.optionTitle}>
+                    Pet resgatado recentemente
+                  </Text>
                   <Text style={styles.optionText}>
-                    Gera prioridade para consulta, exames, vermífugo e avaliação vacinal.
+                    Gera prioridade para consulta, exames, vermífugo e avaliação
+                    vacinal.
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -1543,7 +1622,9 @@ export default function PetRegisterScreen({ navigation, route }: any) {
             <View style={styles.alertBox}>
               <Ionicons name="alert-circle-outline" size={22} color="#B91C1C" />
               <View style={{ flex: 1 }}>
-                <Text style={styles.alertTitle}>Atenção para pet resgatado</Text>
+                <Text style={styles.alertTitle}>
+                  Atenção para pet resgatado
+                </Text>
                 <Text style={styles.alertText}>
                   Como o histórico pode ser desconhecido, recomendamos consulta
                   inicial, exame clínico, vermífugo e avaliação do protocolo de
@@ -1555,13 +1636,17 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
           {situacaoVacinal === "historico_desconhecido" && (
             <View style={styles.warningBox}>
-              <Ionicons name="information-circle-outline" size={22} color="#D97706" />
+              <Ionicons
+                name="information-circle-outline"
+                size={22}
+                color="#D97706"
+              />
               <View style={{ flex: 1 }}>
                 <Text style={styles.warningTitle}>Histórico desconhecido</Text>
                 <Text style={styles.warningText}>
                   O ClyvoCare vai tratar esse pet como prioridade de revisão,
-                  sugerindo conferência das vacinas e montagem de um novo calendário
-                  preventivo.
+                  sugerindo conferência das vacinas e montagem de um novo
+                  calendário preventivo.
                 </Text>
               </View>
             </View>
@@ -1569,12 +1654,17 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
           {situacaoVacinal === "sem_carteirinha" && (
             <View style={styles.infoSituationBox}>
-              <Ionicons name="document-text-outline" size={22} color="#0F766E" />
+              <Ionicons
+                name="document-text-outline"
+                size={22}
+                color="#0F766E"
+              />
               <View style={{ flex: 1 }}>
                 <Text style={styles.infoSituationTitle}>Sem carteirinha</Text>
                 <Text style={styles.infoSituationText}>
-                  Mesmo sem documento, o tutor pode registrar o que lembra e buscar
-                  orientação veterinária para criar um novo histórico seguro.
+                  Mesmo sem documento, o tutor pode registrar o que lembra e
+                  buscar orientação veterinária para criar um novo histórico
+                  seguro.
                 </Text>
               </View>
             </View>
@@ -1676,15 +1766,24 @@ export default function PetRegisterScreen({ navigation, route }: any) {
           >
             {carteiraVacina ? (
               <>
-                <Image source={{ uri: carteiraVacina }} style={styles.carteiraPreview} />
+                <Image
+                  source={{ uri: carteiraVacina }}
+                  style={styles.carteiraPreview}
+                />
 
                 <View style={styles.carteiraInfo}>
                   <View style={styles.carteiraIconActive}>
-                    <Ionicons name="checkmark-circle" size={22} color="#0F766E" />
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={22}
+                      color="#0F766E"
+                    />
                   </View>
 
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.carteiraTitle}>Carteirinha anexada</Text>
+                    <Text style={styles.carteiraTitle}>
+                      Carteirinha anexada
+                    </Text>
                     <Text style={styles.carteiraSub}>
                       Toque para substituir a imagem salva.
                     </Text>
@@ -1694,7 +1793,11 @@ export default function PetRegisterScreen({ navigation, route }: any) {
             ) : (
               <View style={styles.carteiraEmpty}>
                 <View style={styles.carteiraIcon}>
-                  <Ionicons name="document-attach-outline" size={28} color="#0F766E" />
+                  <Ionicons
+                    name="document-attach-outline"
+                    size={28}
+                    color="#0F766E"
+                  />
                 </View>
 
                 <Text style={styles.carteiraTitle}>Adicionar carteirinha</Text>
@@ -1746,10 +1849,11 @@ export default function PetRegisterScreen({ navigation, route }: any) {
         <View style={{ flex: 1 }}>
           <Text style={styles.infoTitle}>Como o score é calculado?</Text>
           <Text style={styles.infoText}>
-            O ClyvoCare analisa os cuidados conforme a espécie: vacinas quando fizer sentido,
-            check-ups, documentação do animal, idade, peso e possíveis alertas no
-            histórico de saúde. Para cães e gatos, também considera a castração.
-            Pets resgatados ou sem histórico recebem prioridade para revisão veterinária.
+            O ClyvoCare analisa os cuidados conforme a espécie: vacinas quando
+            fizer sentido, check-ups, documentação do animal, idade, peso e
+            possíveis alertas no histórico de saúde. Para cães e gatos, também
+            considera a castração. Pets resgatados ou sem histórico recebem
+            prioridade para revisão veterinária.
           </Text>
         </View>
       </View>
@@ -1766,8 +1870,8 @@ export default function PetRegisterScreen({ navigation, route }: any) {
           {salvando
             ? "Salvando..."
             : petId
-            ? "Salvar alterações"
-            : "Cadastrar pet"}
+              ? "Salvar alterações"
+              : "Cadastrar pet"}
         </Text>
       </TouchableOpacity>
 
@@ -1790,7 +1894,8 @@ export default function PetRegisterScreen({ navigation, route }: any) {
                 <TouchableOpacity
                   style={[
                     styles.modalItem,
-                    especieSelecionada?.id === item.id && styles.modalItemActive,
+                    especieSelecionada?.id === item.id &&
+                      styles.modalItemActive,
                   ]}
                   onPress={() => selecionarEspecie(item)}
                   activeOpacity={0.85}
@@ -1814,7 +1919,11 @@ export default function PetRegisterScreen({ navigation, route }: any) {
                   </Text>
 
                   {especieSelecionada?.id === item.id && (
-                    <Ionicons name="checkmark-circle" size={20} color="#0F766E" />
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color="#0F766E"
+                    />
                   )}
                 </TouchableOpacity>
               )}
@@ -1842,7 +1951,10 @@ export default function PetRegisterScreen({ navigation, route }: any) {
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  style={[styles.modalItem, raca === item && styles.modalItemActive]}
+                  style={[
+                    styles.modalItem,
+                    raca === item && styles.modalItemActive,
+                  ]}
                   onPress={() => selecionarRaca(item)}
                   activeOpacity={0.85}
                 >
@@ -1856,7 +1968,11 @@ export default function PetRegisterScreen({ navigation, route }: any) {
                   </Text>
 
                   {raca === item && (
-                    <Ionicons name="checkmark-circle" size={20} color="#0F766E" />
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color="#0F766E"
+                    />
                   )}
                 </TouchableOpacity>
               )}
