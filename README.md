@@ -281,6 +281,6 @@ A funcionalidade de foto do pet também foi planejada para uma próxima entrega,
 
 ## Status do Projeto
 
-Projeto desenvolvido para a 1ª Sprint da disciplina Mobile Application Development.
+Projeto desenvolvido para a 1/2 Sprint da disciplina Mobile Application Development.
 
 ### Status: finalizado para entrega.
