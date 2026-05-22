@@ -82,6 +82,10 @@ export default function IAScreen({ navigation }: any) {
         ? JSON.parse(resolvidosSalvos)
         : [];
 
+      console.log("PETS CARREGADOS NOS ALERTAS IA:", listaPets);
+      console.log("HISTÓRICO CARREGADO NOS ALERTAS IA:", listaHistorico);
+      console.log("ALERTAS RESOLVIDOS CARREGADOS:", listaResolvidos);
+
       setPets(listaPets);
       setHistorico(listaHistorico);
       setAlertasResolvidos(listaResolvidos);
@@ -141,6 +145,9 @@ export default function IAScreen({ navigation }: any) {
         JSON.stringify(novaLista),
       );
 
+      console.log("ALERTA IA RESOLVIDO:", alertaId);
+      console.log("LISTA DE ALERTAS RESOLVIDOS:", novaLista);
+
       setAlertasResolvidos(novaLista);
     } catch {
       Alert.alert("Erro", "Não foi possível marcar o alerta como resolvido.");
@@ -166,6 +173,8 @@ export default function IAScreen({ navigation }: any) {
               ALERTAS_RESOLVIDOS_KEY,
               JSON.stringify(novaLista),
             );
+            
+            console.log("ALERTAS IA RESTAURADOS PARA O PET:", petSelecionadoId);
 
             setAlertasResolvidos(novaLista);
           },

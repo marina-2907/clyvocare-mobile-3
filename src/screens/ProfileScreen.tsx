@@ -117,6 +117,19 @@ export default function ProfileScreen({ navigation }: any) {
       const planoSalvo = await AsyncStorage.getItem(PLANO_KEY);
       const petsSalvos = await AsyncStorage.getItem(PETS_KEY);
 
+      console.log(
+        "PERFIL CARREGADO:",
+        perfilSalvo ? JSON.parse(perfilSalvo) : null,
+      );
+      console.log(
+        "PLANO CARREGADO:",
+        planoSalvo ? JSON.parse(planoSalvo) : null,
+      );
+      console.log(
+        "TOTAL DE PETS NO PERFIL:",
+        petsSalvos ? JSON.parse(petsSalvos).length : 0,
+      );
+
       if (perfilSalvo) {
         const perfilParseado = JSON.parse(perfilSalvo);
         setPerfil(perfilParseado);
@@ -149,7 +162,7 @@ export default function ProfileScreen({ navigation }: any) {
   useFocusEffect(
     useCallback(() => {
       carregarDados();
-    }, [carregarDados])
+    }, [carregarDados]),
   );
 
   const perfilCriado = perfil.nome.trim().length > 0;
@@ -181,15 +194,19 @@ export default function ProfileScreen({ navigation }: any) {
       };
 
       await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(perfilFormatado));
+
+      console.log("PERFIL DO TUTOR SALVO:", perfilFormatado);
+
       setPerfil(perfilFormatado);
+      setPerfilTemp(perfilFormatado);
       setModalPerfilVisivel(false);
 
       Alert.alert("Perfil salvo", "Seu perfil foi atualizado com sucesso.");
-    } catch {
+    } catch (erro) {
+      console.log("ERRO AO SALVAR PERFIL DO TUTOR:", erro);
       Alert.alert("Erro", "Não foi possível salvar o perfil.");
     }
   }
-
   async function excluirPerfil() {
     Alert.alert(
       "Excluir perfil",
@@ -206,20 +223,23 @@ export default function ProfileScreen({ navigation }: any) {
             try {
               await AsyncStorage.removeItem(PROFILE_KEY);
 
+              console.log("PERFIL DO TUTOR EXCLUÍDO");
+
               setPerfil(perfilVazio);
               setPerfilTemp(perfilVazio);
               setModalPerfilVisivel(false);
 
               Alert.alert(
                 "Perfil excluído",
-                "Os dados do perfil foram removidos com sucesso."
+                "Os dados do perfil foram removidos com sucesso.",
               );
-            } catch {
+            } catch (erro) {
+              console.log("ERRO AO EXCLUIR PERFIL DO TUTOR:", erro);
               Alert.alert("Erro", "Não foi possível excluir o perfil.");
             }
           },
         },
-      ]
+      ],
     );
   }
 
@@ -241,6 +261,7 @@ export default function ProfileScreen({ navigation }: any) {
 
     try {
       await AsyncStorage.setItem(PLANO_KEY, JSON.stringify(novoPlano));
+      console.log("PLANO SALVO NO PERFIL:", novoPlano);
       setPlanoAtual(novoPlano);
       setModalPlanoVisivel(false);
 
@@ -248,7 +269,7 @@ export default function ProfileScreen({ navigation }: any) {
         "Plano adquirido",
         `Você agora está usando o plano ${plano.nome} ${
           cicloPlano === "mensal" ? "mensal" : "anual"
-        }.`
+        }.`,
       );
     } catch {
       Alert.alert("Erro", "Não foi possível alterar o plano.");
@@ -264,6 +285,9 @@ export default function ProfileScreen({ navigation }: any) {
         onPress: async () => {
           try {
             await AsyncStorage.removeItem(PLANO_KEY);
+
+            console.log("PLANO REMOVIDO DO PERFIL");
+
             setPlanoAtual(null);
             setModalPlanoVisivel(false);
 
@@ -285,9 +309,9 @@ export default function ProfileScreen({ navigation }: any) {
       return partes[0].charAt(0).toUpperCase();
     }
 
-    return `${partes[0].charAt(0)}${partes[
-      partes.length - 1
-    ].charAt(0)}`.toUpperCase();
+    return `${partes[0].charAt(0)}${partes[partes.length - 1].charAt(
+      0,
+    )}`.toUpperCase();
   }
 
   return (
