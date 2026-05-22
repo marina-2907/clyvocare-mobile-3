@@ -210,6 +210,9 @@ export default function PetsScreen({ navigation }: any) {
 
       setPets(listaValida);
       setHomePetId(idHomeFinal);
+
+      console.log("PETS CARREGADOS NA TELA PETS:", listaValida);
+      console.log("PET ATUAL DA HOME:", idHomeFinal);
     } finally {
       setCarregando(false);
     }
@@ -239,10 +242,10 @@ export default function PetsScreen({ navigation }: any) {
       await AsyncStorage.setItem(PETS_KEY, JSON.stringify(listaAtualizada));
       await AsyncStorage.setItem(HOME_PET_KEY, pet.id);
 
+      console.log("PET DEFINIDO PARA HOME:", pet.id, pet.nome); 
+                            
       setPets(listaAtualizada);
       setHomePetId(pet.id);
-
-      console.log("PET DEFINIDO PARA HOME:", pet.id, pet.nome);
 
       Alert.alert("Pronto", `${pet.nome} agora está aparecendo na Home.`, [
         {

@@ -104,7 +104,8 @@ export default function ScheduleScreen() {
 
           setTodosPets(lista);
 
-        
+          console.log("PETS CARREGADOS NA AGENDA:", lista);
+
           setPetSelecionado((atual) => {
             if (atual) {
               const aindaExiste = lista.find((p) => p.id === atual.id);

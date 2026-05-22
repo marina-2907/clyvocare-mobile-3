@@ -945,6 +945,9 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
       await AsyncStorage.setItem(PETS_KEY, JSON.stringify(pets));
 
+      console.log("PET SALVO COM SUCESSO:", novoPet);
+      console.log("TOTAL DE PETS:", pets.length);
+
       setSalvando(false);
 
       if (navigation.canGoBack()) {
@@ -954,6 +957,8 @@ export default function PetRegisterScreen({ navigation, route }: any) {
       }
     } catch (erro: any) {
       setSalvando(false);
+      
+      console.log("ERRO AO SALVAR PET:", erro);
 
       Alert.alert(
         "Erro ao salvar",
@@ -1075,7 +1080,9 @@ export default function PetRegisterScreen({ navigation, route }: any) {
 
         <View style={styles.scorePreview}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.scoreTitle}>Score inteligente em tempo real</Text>
+            <Text style={styles.scoreTitle}>
+              Score inteligente em tempo real
+            </Text>
             <Text style={styles.scoreSub}>{scoreDescricao}</Text>
 
             <View style={styles.scoreDetails}>

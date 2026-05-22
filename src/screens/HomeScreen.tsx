@@ -935,9 +935,12 @@ export default function HomeScreen({ navigation }: any) {
         };
 
         await AsyncStorage.setItem(PLANO_KEY, JSON.stringify(novoPlano));
+
+        console.log("PLANO CONTRATADO NA HOME:", novoPlano);
+
         setPlanoAtual(novoPlano);
       } catch {
-        console.log("Erro ao salvar plano contratado");
+        console.log("ERRO AO SALVAR PLANO CONTRATADO NA HOME");
       }
     },
     [cicloPlano],
@@ -957,6 +960,9 @@ export default function HomeScreen({ navigation }: any) {
           pets = [];
         }
       }
+
+      console.log("PETS CARREGADOS NA HOME:", pets);
+      console.log("PET ESCOLHIDO PARA HOME:", homePetId);
 
       let petDaHome: Pet | null = null;
 

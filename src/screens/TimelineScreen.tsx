@@ -71,6 +71,8 @@ export default function HistoryScreen({ navigation }: any) {
         ? JSON.parse(historicoSalvo)
         : [];
 
+        console.log("HISTÓRICO CARREGADO:", listaHistorico);
+
       setPets(listaPets);
       setHistorico(listaHistorico);
 
@@ -156,6 +158,9 @@ export default function HistoryScreen({ navigation }: any) {
     };
 
     const novoHistorico = [...historico, novoRegistro];
+
+    console.log("HISTÓRICO SALVO:", novoRegistro);
+    console.log("TOTAL DE REGISTROS:", novoHistorico.length);
 
     try {
       await AsyncStorage.setItem(HISTORICO_KEY, JSON.stringify(novoHistorico));
@@ -1354,12 +1359,11 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   deleteHistoryButton: {
-  width: 34,
-  height: 34,
-  borderRadius: 17,
-  backgroundColor: "#FEF2F2",
-  alignItems: "center",
-  justifyContent: "center",
-},
-
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#FEF2F2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });
