@@ -218,7 +218,7 @@ Link do vídeo demonstrativo:
 
 https://youtu.be/sRD3OKg5e8o?si=OvWMKN_U3sQqHh_G
 
-O vídeo demonstra:
+## O vídeo demonstra:
 
 Execução do app em emulador Android
 Navegação entre as telas
@@ -241,40 +241,46 @@ src/
 │   ├── AlertScreen.tsx
 │   └── ProfileScreen.tsx
 Critérios Atendidos
-1. Navegação entre telas
+### 1. Navegação entre telas
 
 O app possui mais de cinco rotas navegáveis e permite fluxo entre Home, Cadastro, Meus Pets, Histórico, Agenda, Alertas IA e Perfil.
 
-2. Protótipo visual funcional
+### 2. Protótipo visual funcional
 
 Todas as telas possuem layout visual estruturado e coerente com o fluxo de uso da solução.
 
-3. Formulário com manipulação de estado
+### 3. Formulário com manipulação de estado
 
 O cadastro de pet e o perfil do tutor utilizam useState para controlar os campos. Os dados são atualizados conforme o usuário preenche as informações.
 
-4. Armazenamento local com AsyncStorage
+### 4. Armazenamento local com AsyncStorage
 
 O app salva dados localmente usando AsyncStorage, incluindo pets, perfil, histórico, plano e alertas resolvidos.
 
-5. Demonstração em vídeo narrada
+### 5. Demonstração em vídeo narrada
 
 O vídeo demonstrativo apresenta o funcionamento do app em emulador Android, mostrando navegação, formulário, persistência local e restauração dos dados.
 
-Observações
+## Observações
 
 Nesta sprint, o armazenamento foi feito localmente com AsyncStorage, conforme solicitado nos requisitos da disciplina. A integração com banco de dados e API Java será desenvolvida em uma etapa futura.
 
 A funcionalidade de foto do pet também foi planejada para uma próxima entrega, quando houver integração com API e persistência adequada das imagens.
 
-Integrantes
-Felipe Maglio Filho - RM 563512
-João Pedro Bitencourt Goldoni - RM 564339
-Marina Tamagnini Magalhães - RM 561786
-Mateus Granja dos Santos - RM 564930
-Vitória Valentina Maglio - RM 563509
-Status do Projeto
+# Integrantes
+
+- Felipe Maglio Filho - RM 563512
+
+- João Pedro Bitencourt Goldoni - RM 564339
+
+- Marina Tamagnini Magalhães - RM 561786
+
+- Mateus Granja dos Santos - RM 564930
+
+- Vitória Valentina Maglio - RM 563509
+
+## Status do Projeto
 
 Projeto desenvolvido para a 1ª Sprint da disciplina Mobile Application Development.
 
-Status: finalizado para entrega.
+### Status: finalizado para entrega.
