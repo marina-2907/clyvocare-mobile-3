@@ -1,1194 +1,2287 @@
-import React, { useCallback, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  ScrollView,
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
   Modal,
-  FlatList,
+  Platform,
+  RefreshControl,
+  ScrollView,
   StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect } from "@react-navigation/native";
 
-const PETS_KEY = "@clyvocare_pets";
+import {
+  useAppointments,
+  useCancelAppointment,
+  useClinics,
+  useScheduleAppointment,
+  useVeterinarians,
+} from "../hooks/useClinical";
 
-type EventType = "Vacina" | "Consulta" | "Tratamento" | "Exame" | "Castração";
+import { useOwnerProfile } from "../hooks/useOwnerProfile";
+import { usePets } from "../hooks/usePets";
+import { AppointmentType } from "../types/clinical";
 
-type EventStatus =
-  | "Hoje"
-  | "Atrasado"
-  | "Pendente"
-  | "Agendado"
-  | "Concluído"
-  | "Recorrente"
-  | "Sugerido";
+import {
+  decodeReasonWithTime,
+  displayDateToApi,
+  encodeReasonWithTime,
+  formatDateInput,
+  formatTimeInput,
+  isValidDisplayDate,
+  isValidTime,
+} from "../utils/date";
 
-type SituacaoVacinal =
-  | "com_carteirinha"
-  | "sem_carteirinha"
-  | "historico_desconhecido"
-  | "resgatado";
-
-type Castracao = "castrado" | "nao_castrado" | "nao_sei";
-
-type Pet = {
-  id: string;
-  nome: string;
-  especie?: string;
-  especieId?: string;
-  raca?: string;
-  idade?: string;
-  peso?: string;
-  foto?: string | null;
-  carteiraVacina?: string | null;
-  situacaoVacinal?: SituacaoVacinal;
-  castracao?: Castracao;
-  observacoes?: string;
-  vacinas?: {
-    nome: string;
-    emDia: boolean;
-  }[];
-};
-
-type Event = {
-  id: string;
-  title: string;
-  pet: string;
+type AgendaItem = {
+  key: string;
+  sourceId: number;
+  kind: "APPOINTMENT";
   date: string;
-  hour: string;
-  status: EventStatus;
-  type: EventType;
-  place: string;
-  priority: "Alta" | "Média" | "Baixa";
-  note: string;
+  time: string | null;
+  title: string;
+  description: string;
+  professional: string | null;
+  clinic: string | null;
+  status: "OVERDUE" | "TODAY" | "UPCOMING";
+  canCancel: boolean;
 };
 
-function getIconePet(especieId?: string) {
-  switch (especieId) {
-    case "cachorro": return "dog";
-    case "gato": return "cat";
-    case "coelho": return "rabbit";
-    case "cobra": return "snake";
-    case "lagarto": return "bug";
-    case "ave": return "bird";
-    case "peixe": return "fish";
-    case "tartaruga":
-    case "jabuti": return "turtle";
-    case "porco":
-    case "miniporco": return "pig";
-    case "vaca": return "cow";
-    case "cabra": return "sheep";
-    case "hamster":
-    case "porquinho":
-    case "rato":
-    case "chinchila": return "rodent";
-    default: return "paw";
+const APPOINTMENT_TYPES: {
+  label: string;
+  value: AppointmentType;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  {
+    label: "Rotina",
+    value: "ROUTINE",
+    icon: "heart-outline",
+  },
+  {
+    label: "Retorno",
+    value: "FOLLOW_UP",
+    icon: "refresh-outline",
+  },
+  {
+    label: "Urgência",
+    value: "EMERGENCY",
+    icon: "medical-outline",
+  },
+];
+
+function appointmentLabel(type: AppointmentType) {
+  if (type === "FOLLOW_UP") {
+    return "Consulta de retorno";
   }
+
+  if (type === "EMERGENCY") {
+    return "Atendimento de urgência";
+  }
+
+  return "Consulta de rotina";
 }
 
-export default function ScheduleScreen() {
-  const [filter, setFilter] = useState<"Todos" | EventType>("Todos");
-  const [petSelecionado, setPetSelecionado] = useState<Pet | null>(null);
-  const [todosPets, setTodosPets] = useState<Pet[]>([]);
-  const [modalPets, setModalPets] = useState(false);
+function statusLabel(status: AgendaItem["status"]) {
+  if (status === "OVERDUE") {
+    return "Em atraso";
+  }
 
-  useFocusEffect(
-    useCallback(() => {
-      async function carregarPets() {
-        try {
-          const stored = await AsyncStorage.getItem(PETS_KEY);
-          const lista: Pet[] = stored ? JSON.parse(stored) : [];
+  if (status === "TODAY") {
+    return "Hoje";
+  }
 
-          setTodosPets(lista);
+  return "Programado";
+}
 
-          console.log("PETS CARREGADOS NA AGENDA:", lista);
+/**
+ * Retorna a data atual considerando o fuso de São Paulo.
+ *
+ * Isso evita o emulador Android usar UTC e considerar o dia seguinte
+ * depois das 21h no horário de Brasília.
+ */
+function todayInBrazilApiDate() {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
 
-          setPetSelecionado((atual) => {
-            if (atual) {
-              const aindaExiste = lista.find((p) => p.id === atual.id);
-              if (aindaExiste) return aindaExiste;
-            }
-            return lista.length > 0 ? lista[lista.length - 1] : null;
-          });
-        } catch {
-          setTodosPets([]);
-          setPetSelecionado(null);
-        }
-      }
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
 
-      carregarPets();
-    }, [])
+    if (year && month && day) {
+      return `${year}-${month}-${day}`;
+    }
+  } catch {
+    // Fallback para ambientes sem suporte completo a Intl/timeZone.
+  }
+
+  const brazilNow = new Date(Date.now() - 3 * 60 * 60 * 1000);
+
+  const year = brazilNow.getUTCFullYear();
+  const month = String(brazilNow.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(brazilNow.getUTCDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function todayInBrazilDisplayDate() {
+  const [year, month, day] = todayInBrazilApiDate().split("-");
+  return `${day}/${month}/${year}`;
+}
+
+/**
+ * Calcula quantos dias faltam para uma consulta usando apenas as datas,
+ * sem depender do fuso horário configurado no emulador.
+ */
+function daysUntilAppointment(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [todayYear, todayMonth, todayDay] = todayInBrazilApiDate()
+    .split("-")
+    .map(Number);
+
+  const appointmentUtc = Date.UTC(year, month - 1, day);
+  const todayUtc = Date.UTC(todayYear, todayMonth - 1, todayDay);
+
+  return Math.round(
+    (appointmentUtc - todayUtc) / (1000 * 60 * 60 * 24),
+  );
+}
+
+function appointmentDateRelation(
+  date: string,
+): AgendaItem["status"] {
+  const days = daysUntilAppointment(date);
+
+  if (days < 0) {
+    return "OVERDUE";
+  }
+
+  if (days === 0) {
+    return "TODAY";
+  }
+
+  return "UPCOMING";
+}
+
+/**
+ * Texto exibido no card de contagem regressiva.
+ */
+function countdownLabel(days: number) {
+  if (days === 0) {
+    return "É hoje! 🐾";
+  }
+
+  if (days === 1) {
+    return "É amanhã!";
+  }
+
+  return `Faltam ${days} dias`;
+}
+
+/**
+ * Transforma AAAA-MM-DD em DD/MM/AAAA.
+ */
+function formatAppointmentDate(date: string) {
+  const [year, month, day] = date.split("-");
+
+  return `${day}/${month}/${year}`;
+}
+
+export default function ScheduleScreen({
+  navigation,
+}: any) {
+  const {
+    data: owner,
+    isLoading: ownerLoading,
+  } = useOwnerProfile();
+
+  const {
+    data: pets = [],
+    isLoading: petsLoading,
+    refetch: refetchPets,
+  } = usePets(owner?.id);
+
+  const [selectedPetId, setSelectedPetId] =
+    useState<number>();
+
+  const [modalVisible, setModalVisible] =
+    useState(false);
+
+  const [date, setDate] =
+    useState(todayInBrazilDisplayDate());
+
+  const [time, setTime] =
+    useState("09:00");
+
+  const [type, setType] =
+    useState<AppointmentType>("ROUTINE");
+
+  const [reason, setReason] =
+    useState("");
+
+  const [veterinarianId, setVeterinarianId] =
+    useState<number | null>(null);
+
+  const [clinicId, setClinicId] =
+    useState<number | null>(null);
+
+  /**
+   * Seleciona automaticamente o primeiro pet.
+   */
+  useEffect(() => {
+    if (!pets.length) {
+      setSelectedPetId(undefined);
+      return;
+    }
+
+    const selectedPetStillExists = pets.some(
+      (pet) => pet.id === selectedPetId,
+    );
+
+    if (!selectedPetStillExists) {
+      setSelectedPetId(pets[0].id);
+    }
+  }, [pets, selectedPetId]);
+
+  const appointmentsQuery =
+    useAppointments(selectedPetId);
+
+  const veterinariansQuery =
+    useVeterinarians();
+
+  const clinicsQuery =
+    useClinics();
+
+  const scheduleAppointment =
+    useScheduleAppointment();
+
+  const cancelAppointment =
+    useCancelAppointment();
+
+  const selectedPet = pets.find(
+    (pet) => pet.id === selectedPetId,
   );
 
-  function permiteCastracao(pet: Pet) {
-    return pet.especieId === "cachorro" || pet.especieId === "gato";
+  /**
+   * Próxima consulta agendada do pet.
+   */
+  const nextAppointment = useMemo(() => {
+    return (
+      (appointmentsQuery.data ?? [])
+        .filter(
+          (item) =>
+            item.status === "SCHEDULED" &&
+            daysUntilAppointment(
+              item.appointmentDate,
+            ) >= 0,
+        )
+        .sort((a, b) =>
+          a.appointmentDate.localeCompare(
+            b.appointmentDate,
+          ),
+        )[0] ?? null
+    );
+  }, [appointmentsQuery.data]);
+
+  /**
+   * Informações usadas no card de lembrete.
+   */
+  const nextAppointmentInfo = useMemo(() => {
+    if (!nextAppointment) {
+      return null;
+    }
+
+    const parsed = decodeReasonWithTime(
+      nextAppointment.reason,
+    );
+
+    return {
+      days: daysUntilAppointment(
+        nextAppointment.appointmentDate,
+      ),
+      time: parsed.time,
+      reason: parsed.reason,
+    };
+  }, [nextAppointment]);
+
+  /**
+   * Agenda do pet selecionado.
+   * Nesta versão mostramos somente consultas.
+   */
+  const agenda = useMemo<AgendaItem[]>(() => {
+    return (appointmentsQuery.data ?? [])
+      .filter((item) => item.status === "SCHEDULED")
+      .map((item) => {
+        const parsed = decodeReasonWithTime(item.reason);
+
+        return {
+          key: `appointment-${item.id}`,
+          sourceId: item.id,
+          kind: "APPOINTMENT" as const,
+          date: item.appointmentDate,
+          time: parsed.time,
+          title: appointmentLabel(item.type),
+          description: parsed.reason,
+          professional: item.veterinarianName,
+          clinic: item.clinicName,
+          status: appointmentDateRelation(item.appointmentDate),
+          canCancel: true,
+        };
+      })
+      .sort((a, b) =>
+        `${a.date}${a.time ?? "23:59"}`.localeCompare(
+          `${b.date}${b.time ?? "23:59"}`,
+        ),
+      );
+  }, [appointmentsQuery.data]);
+
+  const overdueCount = agenda.filter(
+    (item) => item.status === "OVERDUE",
+  ).length;
+
+  const upcomingCount = agenda.filter(
+    (item) => item.status !== "OVERDUE",
+  ).length;
+
+  const isRefreshing =
+    appointmentsQuery.isRefetching;
+
+  const isLoading =
+    ownerLoading ||
+    petsLoading ||
+    (Boolean(selectedPetId) &&
+      appointmentsQuery.isLoading);
+
+  async function refresh() {
+    await Promise.all([
+      refetchPets(),
+      appointmentsQuery.refetch(),
+    ]);
   }
 
-  function gerarEventosDoPet(pet: Pet): Event[] {
-    const eventos: Event[] = [];
-    const nomePet = pet.nome || "Pet";
+  function resetForm() {
+    setDate(todayInBrazilDisplayDate());
+    setTime("09:00");
+    setType("ROUTINE");
+    setReason("");
+    setVeterinarianId(null);
+    setClinicId(null);
+  }
 
-    const situacaoVacinal = pet.situacaoVacinal || "historico_desconhecido";
-    const castracao = pet.castracao || "nao_sei";
-    const vacinas = pet.vacinas || [];
-    const observacoes = pet.observacoes || "";
-
-    if (situacaoVacinal === "resgatado") {
-      eventos.push({
-        id: `${pet.id}-consulta-resgate`,
-        title: "Consulta inicial de resgate",
-        pet: nomePet,
-        date: "O quanto antes",
-        hour: "--:--",
-        status: "Sugerido",
-        type: "Consulta",
-        place: "Clínica veterinária",
-        priority: "Alta",
-        note: "Pet resgatado recentemente. Avaliar estado geral, pele, peso, hidratação, pulgas, carrapatos e possíveis doenças.",
-      });
-
-      eventos.push({
-        id: `${pet.id}-exames-resgate`,
-        title: "Exames iniciais",
-        pet: nomePet,
-        date: "Após consulta",
-        hour: "--:--",
-        status: "Sugerido",
-        type: "Exame",
-        place: "Laboratório veterinário",
-        priority: "Alta",
-        note: "Indicado para pets resgatados ou sem histórico completo de saúde.",
-      });
-
-      eventos.push({
-        id: `${pet.id}-vermifugo-resgate`,
-        title: "Vermífugo e antipulgas",
-        pet: nomePet,
-        date: "Após orientação",
-        hour: "--:--",
-        status: "Pendente",
-        type: "Tratamento",
-        place: "Clínica ou em casa",
-        priority: "Alta",
-        note: "Verificar necessidade de vermífugo, antipulgas e controle de parasitas com orientação veterinária.",
-      });
+  /**
+   * Agenda nova consulta.
+   */
+  async function submitAppointment() {
+    if (!selectedPetId) {
+      return;
     }
+
+    if (!isValidDisplayDate(date)) {
+      return Alert.alert(
+        "Data inválida",
+        "Digite a data no formato dia/mês/ano.",
+      );
+    }
+
+    if (!isValidTime(time)) {
+      return Alert.alert(
+        "Horário inválido",
+        "Digite um horário entre 00:00 e 23:59.",
+      );
+    }
+
+    if (!reason.trim()) {
+      return Alert.alert(
+        "Motivo obrigatório",
+        "Conte brevemente por que deseja agendar.",
+      );
+    }
+
+    const appointmentDate =
+      displayDateToApi(date);
 
     if (
-      situacaoVacinal === "resgatado" ||
-      situacaoVacinal === "historico_desconhecido" ||
-      situacaoVacinal === "sem_carteirinha"
+      !appointmentDate ||
+      appointmentDate < todayInBrazilApiDate()
     ) {
-      eventos.push({
-        id: `${pet.id}-revisao-vacinal`,
-        title: "Revisão de vacinação",
-        pet: nomePet,
-        date: "Após avaliação",
-        hour: "--:--",
-        status: "Pendente",
-        type: "Vacina",
-        place: "Clínica veterinária",
-        priority: "Alta",
-        note: "Histórico vacinal incompleto ou desconhecido. O veterinário deve orientar o calendário correto.",
+      return Alert.alert(
+        "Data inválida",
+        "A consulta não pode ser agendada no passado.",
+      );
+    }
+
+    try {
+      await scheduleAppointment.mutateAsync({
+        appointmentDate,
+        type,
+        reason: encodeReasonWithTime(
+          reason,
+          time,
+        ),
+        petId: selectedPetId,
+        veterinarianId,
+        clinicId,
       });
+
+      setModalVisible(false);
+
+      resetForm();
+
+      Alert.alert(
+        "Consulta agendada",
+        `O compromisso de ${
+          selectedPet?.name ?? "seu pet"
+        } foi salvo.`,
+      );
+    } catch (error) {
+      Alert.alert(
+        "Não foi possível agendar",
+        error instanceof Error
+          ? error.message
+          : "Tente novamente.",
+      );
     }
-
-    if (situacaoVacinal === "com_carteirinha") {
-      const vacinasPendentes = vacinas.filter((v) => !v.emDia);
-
-      if (vacinasPendentes.length > 0) {
-        vacinasPendentes.forEach((vacina, index) => {
-          eventos.push({
-            id: `${pet.id}-vacina-${index}`,
-            title: vacina.nome,
-            pet: nomePet,
-            date: "Agendar reforço",
-            hour: "--:--",
-            status: "Pendente",
-            type: "Vacina",
-            place: "Clínica veterinária",
-            priority: "Média",
-            note: `A vacina ou cuidado "${vacina.nome}" ainda não foi marcado como em dia.`,
-          });
-        });
-      } else {
-        eventos.push({
-          id: `${pet.id}-checkup-preventivo`,
-          title: "Check-up preventivo",
-          pet: nomePet,
-          date: "Próximo mês",
-          hour: "--:--",
-          status: "Sugerido",
-          type: "Consulta",
-          place: "Clínica veterinária",
-          priority: "Baixa",
-          note: "Pet com vacinas em dia. Manter acompanhamento preventivo.",
-        });
-      }
-    }
-
-    if (permiteCastracao(pet)) {
-      if (castracao === "nao_castrado") {
-        eventos.push({
-          id: `${pet.id}-avaliar-castracao`,
-          title: "Avaliar castração",
-          pet: nomePet,
-          date: "Próxima consulta",
-          hour: "--:--",
-          status: "Sugerido",
-          type: "Castração",
-          place: "Clínica veterinária",
-          priority: "Média",
-          note: "Tutor informou que o pet não é castrado. Veterinário pode orientar riscos, benefícios e momento adequado.",
-        });
-      }
-
-      if (castracao === "nao_sei") {
-        eventos.push({
-          id: `${pet.id}-verificar-castracao`,
-          title: "Verificar se é castrado",
-          pet: nomePet,
-          date: "Na consulta",
-          hour: "--:--",
-          status: "Sugerido",
-          type: "Castração",
-          place: "Clínica veterinária",
-          priority: "Média",
-          note: "Tutor não sabe se o pet é castrado. Recomendado verificar durante avaliação veterinária.",
-        });
-      }
-    }
-
-    if (observacoes.trim()) {
-      eventos.push({
-        id: `${pet.id}-historico-saude`,
-        title: "Revisar histórico de saúde",
-        pet: nomePet,
-        date: "Na próxima consulta",
-        hour: "--:--",
-        status: "Sugerido",
-        type: "Consulta",
-        place: "Clínica veterinária",
-        priority: "Média",
-        note: observacoes,
-      });
-    }
-
-    return eventos;
   }
 
-  const events: Event[] = petSelecionado ? gerarEventosDoPet(petSelecionado) : [];
+  /**
+   * Cancela consulta.
+   */
+  function askCancel(item: AgendaItem) {
+    Alert.alert(
+      "Cancelar consulta",
+      "Deseja realmente cancelar este agendamento?",
+      [
+        {
+          text: "Voltar",
+          style: "cancel",
+        },
+        {
+          text: "Cancelar consulta",
+          style: "destructive",
 
-  const filteredEvents =
-    filter === "Todos" ? events : events.filter((event) => event.type === filter);
+          onPress: async () => {
+            if (!selectedPetId) {
+              return;
+            }
 
-  const pendentes = events.filter((e) => e.status === "Pendente").length;
-  const sugeridos = events.filter((e) => e.status === "Sugerido").length;
-  const altaPrioridade = events.filter((e) => e.priority === "Alta").length;
-
-  const proximo = events[0];
-
-  function getTypeIcon(type: EventType) {
-    if (type === "Vacina") return "needle";
-    if (type === "Consulta") return "stethoscope";
-    if (type === "Tratamento") return "pill";
-    if (type === "Castração") return "heart-pulse";
-    return "test-tube";
+            try {
+              await cancelAppointment.mutateAsync({
+                appointmentId:
+                  item.sourceId,
+                petId: selectedPetId,
+              });
+            } catch (error) {
+              Alert.alert(
+                "Erro",
+                error instanceof Error
+                  ? error.message
+                  : "Não foi possível cancelar.",
+              );
+            }
+          },
+        },
+      ],
+    );
   }
 
-  function getTypeColor(type: EventType) {
-    if (type === "Vacina") return "#0F766E";
-    if (type === "Consulta") return "#2563EB";
-    if (type === "Tratamento") return "#9333EA";
-    if (type === "Castração") return "#DB2777";
-    return "#EA580C";
-  }
+  if (isLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator
+          size="large"
+          color="#0F766E"
+        />
 
-  function getStatusStyle(status: EventStatus) {
-    if (status === "Atrasado") return { bg: "#FEE2E2", color: "#DC2626" };
-    if (status === "Pendente") return { bg: "#FEF3C7", color: "#D97706" };
-    if (status === "Concluído") return { bg: "#DCFCE7", color: "#166534" };
-    if (status === "Hoje") return { bg: "#DBEAFE", color: "#1D4ED8" };
-    if (status === "Sugerido") return { bg: "#FCE7F3", color: "#BE185D" };
-    return { bg: "#E0F2FE", color: "#0369A1" };
-  }
-
-  function getPriorityColor(priority: "Alta" | "Média" | "Baixa") {
-    if (priority === "Alta") return "#EF4444";
-    if (priority === "Média") return "#F59E0B";
-    return "#22C55E";
-  }
-
-  const filters: ("Todos" | EventType)[] = [
-    "Todos",
-    "Vacina",
-    "Consulta",
-    "Exame",
-    "Tratamento",
-  ];
-
-  if (petSelecionado && permiteCastracao(petSelecionado)) {
-    filters.push("Castração");
+        <Text style={styles.loadingText}>
+          Organizando sua agenda...
+        </Text>
+      </View>
+    );
   }
 
   return (
-    <>
+    <View style={styles.container}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="#0F766E"
+      />
 
-      <StatusBar barStyle="dark-content" backgroundColor="#F3FAFA" />
+      {/* HEADER */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerEyebrow}>
+            CUIDADO CONTÍNUO
+          </Text>
 
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>Agenda do Pet</Text>
-            <Text style={styles.subtitle}>
-              Veja os cuidados sugeridos para cada pet cadastrado.
-            </Text>
-          </View>
+          <Text style={styles.headerTitle}>
+            Agenda
+          </Text>
 
-          <View style={styles.calendarIcon}>
-            <Ionicons name="calendar-outline" size={26} color="#0F766E" />
-          </View>
+          <Text style={styles.headerSubtitle}>
+            Consultas e próximos cuidados
+          </Text>
         </View>
 
-        {/* Seletor de pet */}
         <TouchableOpacity
-          style={styles.petSelectorCard}
-          onPress={() => todosPets.length > 0 && setModalPets(true)}
-          activeOpacity={0.85}
+          style={[
+            styles.addButton,
+            pets.length === 0 &&
+              styles.disabledButton,
+          ]}
+          onPress={() =>
+            setModalVisible(true)
+          }
+          disabled={pets.length === 0}
         >
-          <View style={styles.petSelectorLeft}>
-            <View style={styles.petSelectorIconBox}>
-              <MaterialCommunityIcons
-                name={getIconePet(petSelecionado?.especieId) as any}
-                size={26}
-                color="#0F766E"
-              />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.petSelectorLabel}>Agenda de</Text>
-              <Text style={styles.petSelectorNome}>
-                {petSelecionado ? petSelecionado.nome : "Nenhum pet cadastrado"}
-              </Text>
-              <Text style={styles.petSelectorSub}>
-                {petSelecionado
-                  ? petSelecionado.raca || petSelecionado.especie || "Dados não informados"
-                  : "Cadastre um pet para gerar recomendações"}
-              </Text>
-            </View>
-          </View>
-
-          {todosPets.length > 1 && (
-            <View style={styles.petSelectorBadge}>
-              <Text style={styles.petSelectorBadgeText}>
-                {todosPets.length} pets
-              </Text>
-              <Ionicons name="chevron-down" size={15} color="#0F766E" />
-            </View>
-          )}
+          <Ionicons
+            name="add"
+            size={27}
+            color="#FFFFFF"
+          />
         </TouchableOpacity>
+      </View>
 
-        {/* Pills dos pets (atalho rápido quando tem poucos) */}
-        {todosPets.length > 1 && todosPets.length <= 5 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.petPillsScroll}
-          >
-            {todosPets.map((pet) => (
-              <TouchableOpacity
-                key={pet.id}
-                style={[
-                  styles.petPill,
-                  petSelecionado?.id === pet.id && styles.petPillActive,
-                ]}
-                onPress={() => {
-                  setPetSelecionado(pet);
-                  setFilter("Todos");
-                }}
-                activeOpacity={0.85}
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => void refresh()}
+            colors={["#0F766E"]}
+          />
+        }
+      >
+        {pets.length === 0 ? (
+          <EmptyPets
+            onAdd={() =>
+              navigation.navigate(
+                "Cadastrar Pet",
+              )
+            }
+          />
+        ) : (
+          <>
+            {/* PETS */}
+            <Text style={styles.sectionLabel}>
+              AGENDA DE
+            </Text>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={
+                false
+              }
+              contentContainerStyle={
+                styles.petRow
+              }
+            >
+              {pets.map((pet) => {
+                const active =
+                  pet.id === selectedPetId;
+
+                return (
+                  <TouchableOpacity
+                    key={pet.id}
+                    style={[
+                      styles.petChip,
+                      active &&
+                        styles.petChipActive,
+                    ]}
+                    onPress={() =>
+                      setSelectedPetId(
+                        pet.id,
+                      )
+                    }
+                  >
+                    <View
+                      style={[
+                        styles.petAvatar,
+                        active &&
+                          styles.petAvatarActive,
+                      ]}
+                    >
+                      <Ionicons
+                        name="paw"
+                        size={17}
+                        color={
+                          active
+                            ? "#0F766E"
+                            : "#64748B"
+                        }
+                      />
+                    </View>
+
+                    <View>
+                      <Text
+                        style={[
+                          styles.petName,
+                          active &&
+                            styles.petNameActive,
+                        ]}
+                      >
+                        {pet.name}
+                      </Text>
+
+                      <Text
+                        style={[
+                          styles.petSpecies,
+                          active &&
+                            styles.petSpeciesActive,
+                        ]}
+                      >
+                        {pet.speciesName}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* RESUMO */}
+            <View style={styles.summaryCard}>
+              <View
+                style={styles.summaryIcon}
               >
-                <MaterialCommunityIcons
-                  name={getIconePet(pet.especieId) as any}
-                  size={15}
-                  color={petSelecionado?.id === pet.id ? "#FFFFFF" : "#0F766E"}
+                <Ionicons
+                  name="calendar"
+                  size={25}
+                  color="#0F766E"
                 />
+              </View>
+
+              <View style={styles.summaryText}>
+                <Text
+                  style={styles.summaryTitle}
+                >
+                  {upcomingCount === 0
+                    ? "Agenda livre"
+                    : `${upcomingCount} cuidado${
+                        upcomingCount > 1
+                          ? "s"
+                          : ""
+                      } programado${
+                        upcomingCount > 1
+                          ? "s"
+                          : ""
+                      }`}
+                </Text>
+
+                <Text
+                  style={
+                    styles.summarySubtitle
+                  }
+                >
+                  {overdueCount > 0
+                    ? `${overdueCount} item${
+                        overdueCount > 1
+                          ? "s precisam"
+                          : " precisa"
+                      } de atenção`
+                    : `Tudo organizado para ${selectedPet?.name}`}
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.countBadge,
+                  overdueCount > 0 &&
+                    styles.countBadgeWarning,
+                ]}
+              >
                 <Text
                   style={[
-                    styles.petPillText,
-                    petSelecionado?.id === pet.id && styles.petPillTextActive,
+                    styles.countText,
+                    overdueCount > 0 &&
+                      styles.countTextWarning,
                   ]}
                 >
-                  {pet.nome}
+                  {agenda.length}
                 </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryTop}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.summaryLabel}>Próximo cuidado sugerido</Text>
-              <Text style={styles.summaryTitle}>
-                {proximo ? proximo.title : "Nenhum evento"}
-              </Text>
-              <Text style={styles.summaryInfo}>
-                {proximo
-                  ? `${proximo.pet} • ${proximo.date}`
-                  : "Cadastre um pet para gerar a agenda"}
-              </Text>
+              </View>
             </View>
 
-            <View style={styles.summaryBadge}>
-              <Text style={styles.summaryBadgeText}>
-                {proximo ? proximo.priority : "--"}
-              </Text>
-            </View>
-          </View>
+            {/* CONTAGEM REGRESSIVA */}
+            {nextAppointment &&
+              nextAppointmentInfo && (
+                <View
+                  style={
+                    styles.countdownCard
+                  }
+                >
+                  <View
+                    style={
+                      styles.countdownTop
+                    }
+                  >
+                    <View
+                      style={
+                        styles.countdownBell
+                      }
+                    >
+                      <Ionicons
+                        name="calendar-outline"
+                        size={21}
+                        color="#0F766E"
+                      />
+                    </View>
 
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{pendentes}</Text>
-              <Text style={styles.statLabel}>Pendentes</Text>
-            </View>
+                    <View
+                      style={
+                        styles.countdownHeading
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.countdownEyebrow
+                        }
+                      >
+                        SUA CONSULTA ESTÁ SE
+                        APROXIMANDO
+                      </Text>
 
-            <View style={styles.statDivider} />
+                      <Text
+                        style={
+                          styles.countdownPet
+                        }
+                      >
+                        {selectedPet?.name} •{" "}
+                        {appointmentLabel(
+                          nextAppointment.type,
+                        )}
+                      </Text>
+                    </View>
+                  </View>
 
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{sugeridos}</Text>
-              <Text style={styles.statLabel}>Sugeridos</Text>
-            </View>
+                  <View
+                    style={
+                      styles.countdownMain
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.countdownNumber,
+                        nextAppointmentInfo.days <=
+                          1 &&
+                          styles.countdownNumberUrgent,
+                      ]}
+                    >
+                      {countdownLabel(
+                        nextAppointmentInfo.days,
+                      )}
+                    </Text>
 
-            <View style={styles.statDivider} />
+                    <Text
+                      style={
+                        styles.countdownDate
+                      }
+                    >
+                      {formatAppointmentDate(
+                        nextAppointment.appointmentDate,
+                      )}
 
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{altaPrioridade}</Text>
-              <Text style={styles.statLabel}>Alta prioridade</Text>
-            </View>
-          </View>
-        </View>
+                      {nextAppointmentInfo.time
+                        ? ` às ${nextAppointmentInfo.time}`
+                        : ""}
+                    </Text>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.filtersScroll}
-        >
-          {filters.map((item) => (
-            <TouchableOpacity
-              key={item}
-              style={[styles.filterButton, filter === item && styles.filterActive]}
-              onPress={() => setFilter(item)}
-              activeOpacity={0.85}
-            >
-              <Text
-                style={[
-                  styles.filterText,
-                  filter === item && styles.filterTextActive,
-                ]}
+                    {nextAppointmentInfo
+                      .reason ? (
+                      <Text
+                        style={
+                          styles.countdownReason
+                        }
+                      >
+                        {
+                          nextAppointmentInfo.reason
+                        }
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <View
+                    style={
+                      styles.countdownDivider
+                    }
+                  />
+
+                  <View
+                    style={
+                      styles.countdownFooter
+                    }
+                  >
+                    <Ionicons
+                      name="bag-check-outline"
+                      size={19}
+                      color="#0F766E"
+                    />
+
+                    <Text
+                      style={
+                        styles.countdownFooterText
+                      }
+                    >
+                      {nextAppointmentInfo.days ===
+                      0
+                        ? "Chegou o dia! Separe a carteirinha e os documentos do seu pet."
+                        : nextAppointmentInfo.days ===
+                            1
+                          ? "Está quase na hora. Deixe tudo preparado para amanhã."
+                          : "Tudo preparado para o próximo cuidado? Separe carteirinha e exames."}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+            {/* AGENDA */}
+            {agenda.length === 0 ? (
+              <View
+                style={styles.emptyAgenda}
               >
-                {item}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Compromissos inteligentes</Text>
-          <Text style={styles.sectionCount}>{filteredEvents.length} eventos</Text>
-        </View>
-
-        {filteredEvents.length === 0 && (
-          <View style={styles.emptyBox}>
-            <Ionicons name="paw-outline" size={34} color="#0F766E" />
-            <Text style={styles.emptyTitle}>Nenhum evento gerado ainda</Text>
-            <Text style={styles.emptyText}>
-              Cadastre um pet e preencha situação vacinal, castração e histórico de
-              saúde para a agenda criar recomendações automáticas.
-            </Text>
-          </View>
-        )}
-
-        {filteredEvents.map((event) => {
-          const statusStyle = getStatusStyle(event.status);
-          const typeColor = getTypeColor(event.type);
-
-          return (
-            <View key={event.id} style={styles.card}>
-              <View style={styles.cardTop}>
-                <View style={[styles.iconBox, { backgroundColor: `${typeColor}18` }]}>
-                  <MaterialCommunityIcons
-                    name={getTypeIcon(event.type) as any}
-                    size={27}
-                    color={typeColor}
+                <View
+                  style={
+                    styles.emptyAgendaIcon
+                  }
+                >
+                  <Ionicons
+                    name="calendar-clear-outline"
+                    size={38}
+                    color="#0F766E"
                   />
                 </View>
 
-                <View style={styles.cardContent}>
-                  <Text style={[styles.type, { color: typeColor }]}>
-                    {event.type}
-                  </Text>
-                  <Text style={styles.eventTitle}>{event.title}</Text>
-                  <Text style={styles.petInfo}>
-                    {event.pet} • {event.date} às {event.hour}
-                  </Text>
-                </View>
+                <Text
+                  style={styles.emptyTitle}
+                >
+                  Nada pendente por aqui
+                </Text>
 
-                <View style={[styles.statusBox, { backgroundColor: statusStyle.bg }]}>
-                  <Text style={[styles.statusText, { color: statusStyle.color }]}>
-                    {event.status}
+                <Text
+                  style={
+                    styles.emptyDescription
+                  }
+                >
+                  Agende uma consulta para acompanhar
+                  os próximos cuidados do seu pet.
+                </Text>
+
+                <TouchableOpacity
+                  style={
+                    styles.primaryButton
+                  }
+                  onPress={() =>
+                    setModalVisible(true)
+                  }
+                >
+                  <Ionicons
+                    name="add-circle-outline"
+                    size={20}
+                    color="#FFFFFF"
+                  />
+
+                  <Text
+                    style={
+                      styles.primaryButtonText
+                    }
+                  >
+                    Agendar consulta
                   </Text>
-                </View>
+                </TouchableOpacity>
               </View>
-
-              <View style={styles.cardBottom}>
-                <View style={styles.infoLine}>
-                  <Ionicons name="location-outline" size={15} color="#64748B" />
-                  <Text style={styles.infoText}>{event.place}</Text>
-                </View>
-
-                <View style={styles.infoLine}>
-                  <Ionicons name="document-text-outline" size={15} color="#64748B" />
-                  <Text style={styles.infoText}>{event.note}</Text>
-                </View>
+            ) : (
+              <View style={styles.timeline}>
+                {agenda.map((item) => (
+                  <AgendaCard
+                    key={item.key}
+                    item={item}
+                    busy={cancelAppointment.isPending}
+                    onCancel={() => askCancel(item)}
+                  />
+                ))}
               </View>
+            )}
 
-              <View style={styles.priorityRow}>
-                <View
-                  style={[
-                    styles.priorityDot,
-                    { backgroundColor: getPriorityColor(event.priority) },
-                  ]}
+            {/* HISTÓRICO */}
+            <TouchableOpacity
+              style={styles.historyBanner}
+              onPress={() =>
+                navigation.navigate(
+                  "Histórico",
+                )
+              }
+            >
+              <View
+                style={styles.historyIcon}
+              >
+                <Ionicons
+                  name="time-outline"
+                  size={22}
+                  color="#0F766E"
                 />
-                <Text style={styles.priorityText}>
-                  Prioridade {event.priority.toLowerCase()}
+              </View>
+
+              <View
+                style={styles.historyText}
+              >
+                <Text
+                  style={styles.historyTitle}
+                >
+                  Procurando um cuidado antigo?
+                </Text>
+
+                <Text
+                  style={
+                    styles.historySubtitle
+                  }
+                >
+                  Veja o prontuário e as
+                  lembranças de{" "}
+                  {selectedPet?.name}
                 </Text>
               </View>
-            </View>
-          );
-        })}
 
-        <View style={styles.aiBox}>
-          <View style={styles.aiIcon}>
-            <Ionicons name="sparkles-outline" size={24} color="#0F766E" />
-          </View>
-
-          <View style={{ flex: 1 }}>
-            <Text style={styles.aiTitle}>Agenda inteligente ClyvoCare</Text>
-            <Text style={styles.aiText}>
-              Selecione qualquer pet cadastrado para ver os cuidados recomendados.
-              Para cães e gatos, castração também é considerada.
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.tipBox}>
-          <Text style={styles.tipTitle}>Como funciona</Text>
-          <Text style={styles.tipText}>
-            Toque no card do pet no topo ou nas pílulas de atalho para alternar entre
-            os seus pets e ver a agenda personalizada de cada um.
-          </Text>
-        </View>
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color="#0F766E"
+              />
+            </TouchableOpacity>
+          </>
+        )}
       </ScrollView>
 
-      {/* Modal de seleção de pet */}
-      <Modal visible={modalPets} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Escolher pet</Text>
-              <TouchableOpacity onPress={() => setModalPets(false)}>
-                <Ionicons name="close" size={25} color="#64748B" />
+      {/* MODAL NOVA CONSULTA */}
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() =>
+          setModalVisible(false)
+        }
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={
+            Platform.OS === "ios"
+              ? "padding"
+              : undefined
+          }
+        >
+          <View style={styles.modalCard}>
+            <View
+              style={styles.modalHandle}
+            />
+
+            <View
+              style={styles.modalHeader}
+            >
+              <View>
+                <Text
+                  style={styles.modalTitle}
+                >
+                  Nova consulta
+                </Text>
+
+                <Text
+                  style={
+                    styles.modalSubtitle
+                  }
+                >
+                  Agendar para{" "}
+                  {selectedPet?.name}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() =>
+                  setModalVisible(false)
+                }
+              >
+                <Ionicons
+                  name="close"
+                  size={22}
+                  color="#334155"
+                />
               </TouchableOpacity>
             </View>
 
-            <FlatList
-              data={todosPets}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.modalItem,
-                    petSelecionado?.id === item.id && styles.modalItemActive,
-                  ]}
-                  onPress={() => {
-                    setPetSelecionado(item);
-                    setFilter("Todos");
-                    setModalPets(false);
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <View style={[
-                    styles.modalItemIcon,
-                    petSelecionado?.id === item.id && styles.modalItemIconActive,
-                  ]}>
-                    <MaterialCommunityIcons
-                      name={getIconePet(item.especieId) as any}
-                      size={22}
-                      color={petSelecionado?.id === item.id ? "#FFFFFF" : "#0F766E"}
+            <ScrollView
+              showsVerticalScrollIndicator={
+                false
+              }
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text
+                style={styles.inputLabel}
+              >
+                Tipo de atendimento
+              </Text>
+
+              <View style={styles.typeRow}>
+                {APPOINTMENT_TYPES.map(
+                  (option) => {
+                    const active =
+                      type === option.value;
+
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.typeOption,
+                          active &&
+                            styles.typeOptionActive,
+                        ]}
+                        onPress={() =>
+                          setType(
+                            option.value,
+                          )
+                        }
+                      >
+                        <Ionicons
+                          name={
+                            option.icon
+                          }
+                          size={20}
+                          color={
+                            active
+                              ? "#FFFFFF"
+                              : "#64748B"
+                          }
+                        />
+
+                        <Text
+                          style={[
+                            styles.typeText,
+                            active &&
+                              styles.typeTextActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  },
+                )}
+              </View>
+
+              <View
+                style={styles.twoColumns}
+              >
+                <FormInput
+                  label="Data"
+                  icon="calendar-outline"
+                  value={date}
+                  onChangeText={(value) =>
+                    setDate(
+                      formatDateInput(value),
+                    )
+                  }
+                  placeholder="DD/MM/AAAA"
+                  keyboardType="numeric"
+                  maxLength={10}
+                />
+
+                <FormInput
+                  label="Horário"
+                  icon="time-outline"
+                  value={time}
+                  onChangeText={(value) =>
+                    setTime(
+                      formatTimeInput(value),
+                    )
+                  }
+                  placeholder="HH:MM"
+                  keyboardType="numeric"
+                  maxLength={5}
+                />
+              </View>
+
+              <FormInput
+                label="Motivo da consulta"
+                icon="chatbubble-ellipses-outline"
+                value={reason}
+                onChangeText={setReason}
+                placeholder="Ex.: check-up anual"
+                multiline
+              />
+
+              <PickerSection title="Profissional (opcional)">
+                <ChoiceChip
+                  label="A definir"
+                  active={
+                    veterinarianId === null
+                  }
+                  onPress={() =>
+                    setVeterinarianId(null)
+                  }
+                />
+
+                {(
+                  veterinariansQuery.data ??
+                  []
+                ).map((vet) => (
+                  <ChoiceChip
+                    key={vet.id}
+                    label={vet.name}
+                    caption={
+                      vet.specialty ??
+                      vet.licenseNumber
+                    }
+                    active={
+                      veterinarianId ===
+                      vet.id
+                    }
+                    onPress={() =>
+                      setVeterinarianId(
+                        vet.id,
+                      )
+                    }
+                  />
+                ))}
+              </PickerSection>
+
+              {(clinicsQuery.data ?? [])
+                .length > 0 && (
+                <PickerSection title="Clínica (opcional)">
+                  <ChoiceChip
+                    label="A definir"
+                    active={
+                      clinicId === null
+                    }
+                    onPress={() =>
+                      setClinicId(null)
+                    }
+                  />
+
+                  {(
+                    clinicsQuery.data ?? []
+                  ).map((clinic) => (
+                    <ChoiceChip
+                      key={clinic.id}
+                      label={clinic.name}
+                      caption={
+                        clinic.cityName ??
+                        undefined
+                      }
+                      active={
+                        clinicId ===
+                        clinic.id
+                      }
+                      onPress={() =>
+                        setClinicId(
+                          clinic.id,
+                        )
+                      }
                     />
-                  </View>
-
-                  <View style={{ flex: 1 }}>
-                    <Text style={[
-                      styles.modalItemNome,
-                      petSelecionado?.id === item.id && styles.modalItemNomeActive,
-                    ]}>
-                      {item.nome}
-                    </Text>
-                    <Text style={styles.modalItemSub}>
-                      {item.raca || item.especie || "Dados não informados"}
-                    </Text>
-                  </View>
-
-                  {petSelecionado?.id === item.id && (
-                    <Ionicons name="checkmark-circle" size={22} color="#0F766E" />
-                  )}
-                </TouchableOpacity>
+                  ))}
+                </PickerSection>
               )}
-            />
+
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  scheduleAppointment.isPending &&
+                    styles.disabledButton,
+                ]}
+                onPress={() =>
+                  void submitAppointment()
+                }
+                disabled={
+                  scheduleAppointment.isPending
+                }
+              >
+                {scheduleAppointment.isPending ? (
+                  <ActivityIndicator
+                    color="#FFFFFF"
+                  />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="checkmark-circle-outline"
+                      size={21}
+                      color="#FFFFFF"
+                    />
+
+                    <Text
+                      style={
+                        styles.saveButtonText
+                      }
+                    >
+                      Confirmar agendamento
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </>
+    </View>
+  );
+}
+
+function AgendaCard({
+  item,
+  busy,
+  onCancel,
+}: {
+  item: AgendaItem;
+  busy: boolean;
+  onCancel: () => void;
+}) {
+  const warning =
+    item.status === "OVERDUE";
+
+  const today =
+    item.status === "TODAY";
+
+  const accent = warning
+    ? "#DC2626"
+    : today
+      ? "#D97706"
+      : "#0F766E";
+
+  return (
+    <View style={styles.agendaCard}>
+      <View
+        style={[
+          styles.agendaAccent,
+          {
+            backgroundColor: accent,
+          },
+        ]}
+      />
+
+      <View
+        style={[
+          styles.dateBox,
+          {
+            backgroundColor: `${accent}12`,
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.dateDay,
+            { color: accent },
+          ]}
+        >
+          {item.date.slice(8, 10)}
+        </Text>
+
+        <Text
+          style={[
+            styles.dateMonth,
+            { color: accent },
+          ]}
+        >
+          {new Date(
+            `${item.date}T12:00:00`,
+          )
+            .toLocaleDateString("pt-BR", {
+              month: "short",
+            })
+            .replace(".", "")
+            .toUpperCase()}
+        </Text>
+      </View>
+
+      <View style={styles.agendaContent}>
+        <View style={styles.agendaTopRow}>
+          <View
+            style={[
+              styles.statusPill,
+              {
+                backgroundColor: `${accent}12`,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.statusText,
+                { color: accent },
+              ]}
+            >
+              {statusLabel(item.status)}
+            </Text>
+          </View>
+
+          <Ionicons
+            name="medical-outline"
+            size={19}
+            color={accent}
+          />
+        </View>
+
+        <Text style={styles.agendaTitle}>
+          {item.title}
+        </Text>
+
+        <Text
+          style={styles.agendaDescription}
+        >
+          {item.description}
+        </Text>
+
+        <View style={styles.metaWrap}>
+          <View style={styles.metaItem}>
+            <Ionicons
+              name="time-outline"
+              size={14}
+              color="#64748B"
+            />
+
+            <Text style={styles.metaText}>
+              {item.time ??
+                "Horário a confirmar"}
+            </Text>
+          </View>
+
+          {item.professional && (
+            <View style={styles.metaItem}>
+              <Ionicons
+                name="person-outline"
+                size={14}
+                color="#64748B"
+              />
+
+              <Text style={styles.metaText}>
+                {item.professional}
+              </Text>
+            </View>
+          )}
+
+          {item.clinic && (
+            <View style={styles.metaItem}>
+              <Ionicons
+                name="business-outline"
+                size={14}
+                color="#64748B"
+              />
+
+              <Text style={styles.metaText}>
+                {item.clinic}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <TouchableOpacity
+          disabled={busy}
+          onPress={onCancel}
+          style={styles.cardAction}
+        >
+          <Ionicons
+            name="close-circle-outline"
+            size={17}
+            color="#B91C1C"
+          />
+
+          <Text
+            style={[
+              styles.cardActionText,
+              styles.cancelText,
+            ]}
+          >
+            Cancelar consulta
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function EmptyPets({
+  onAdd,
+}: {
+  onAdd: () => void;
+}) {
+  return (
+    <View style={styles.emptyAgenda}>
+      <View style={styles.emptyAgendaIcon}>
+        <Ionicons
+          name="paw-outline"
+          size={40}
+          color="#0F766E"
+        />
+      </View>
+
+      <Text style={styles.emptyTitle}>
+        Cadastre um pet primeiro
+      </Text>
+
+      <Text style={styles.emptyDescription}>
+        A agenda é personalizada para cada
+        animal.
+      </Text>
+
+      <TouchableOpacity
+        style={styles.primaryButton}
+        onPress={onAdd}
+      >
+        <Text
+          style={styles.primaryButtonText}
+        >
+          Cadastrar pet
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function FormInput({
+  label,
+  icon,
+  multiline,
+  ...props
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  multiline?: boolean;
+} & React.ComponentProps<typeof TextInput>) {
+  return (
+    <View
+      style={[
+        styles.formField,
+        multiline && styles.formFieldFull,
+      ]}
+    >
+      <Text style={styles.inputLabel}>
+        {label}
+      </Text>
+
+      <View
+        style={[
+          styles.inputBox,
+          multiline &&
+            styles.inputBoxMultiline,
+        ]}
+      >
+        <Ionicons
+          name={icon}
+          size={18}
+          color="#0F766E"
+        />
+
+        <TextInput
+          {...props}
+          multiline={multiline}
+          style={[
+            styles.input,
+            multiline &&
+              styles.inputMultiline,
+          ]}
+          placeholderTextColor="#94A3B8"
+          autoComplete="off"
+          importantForAutofill="no"
+        />
+      </View>
+    </View>
+  );
+}
+
+function PickerSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.pickerSection}>
+      <Text style={styles.inputLabel}>
+        {title}
+      </Text>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={
+          styles.choiceRow
+        }
+      >
+        {children}
+      </ScrollView>
+    </View>
+  );
+}
+
+function ChoiceChip({
+  label,
+  caption,
+  active,
+  onPress,
+}: {
+  label: string;
+  caption?: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.choiceChip,
+        active && styles.choiceChipActive,
+      ]}
+      onPress={onPress}
+    >
+      <Text
+        style={[
+          styles.choiceLabel,
+          active &&
+            styles.choiceLabelActive,
+        ]}
+      >
+        {label}
+      </Text>
+
+      {caption && (
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.choiceCaption,
+            active &&
+              styles.choiceCaptionActive,
+          ]}
+        >
+          {caption}
+        </Text>
+      )}
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F3FAFA",
-    paddingHorizontal: 20,
+    backgroundColor: "#F5FAF9",
+  },
+
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F5FAF9",
+  },
+
+  loadingText: {
+    marginTop: 12,
+    color: "#475569",
+    fontWeight: "700",
   },
 
   header: {
-    marginTop: 55,
-    marginBottom: 20,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-  },
-
-  title: {
-    fontSize: 31,
-    fontWeight: "900",
-    color: "#0F766E",
-    letterSpacing: -0.8,
-  },
-
-  subtitle: {
-    color: "#64748B",
-    marginTop: 7,
-    lineHeight: 21,
-    fontWeight: "600",
-    width: 270,
-  },
-
-  calendarIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 20,
-    backgroundColor: "#E0F5F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  petSelectorCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-    shadowColor: "#0F766E",
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-
-  petSelectorLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
-
-  petSelectorIconBox: {
-    width: 50,
-    height: 50,
-    borderRadius: 17,
-    backgroundColor: "#E0F5F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  petSelectorLabel: {
-    fontSize: 11,
-    color: "#0F766E",
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-
-  petSelectorNome: {
-    fontSize: 19,
-    fontWeight: "900",
-    color: "#0F172A",
-    marginTop: 1,
-  },
-
-  petSelectorSub: {
-    fontSize: 12,
-    color: "#64748B",
-    fontWeight: "700",
-    marginTop: 2,
-  },
-
-  petSelectorBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    backgroundColor: "#E0F5F2",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-  },
-
-  petSelectorBadgeText: {
-    color: "#0F766E",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-
-  petPillsScroll: {
-    marginBottom: 14,
-  },
-
-  petPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 999,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-  },
-
-  petPillActive: {
+    paddingTop: 52,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
     backgroundColor: "#0F766E",
-    borderColor: "#0F766E",
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
 
-  petPillText: {
-    fontSize: 13,
+  headerEyebrow: {
+    color: "#99F6E4",
+    fontSize: 10,
     fontWeight: "900",
+    letterSpacing: 1.5,
+  },
+
+  headerTitle: {
+    marginTop: 2,
+    color: "#FFFFFF",
+    fontSize: 29,
+    fontWeight: "900",
+  },
+
+  headerSubtitle: {
+    marginTop: 3,
+    color: "#CCFBF1",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  addButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#14B8A6",
+    elevation: 5,
+  },
+
+  disabledButton: {
+    opacity: 0.55,
+  },
+
+  content: {
+    padding: 18,
+    paddingBottom: 42,
+  },
+
+  sectionLabel: {
+    marginBottom: 9,
+    color: "#64748B",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.3,
+  },
+
+  petRow: {
+    gap: 10,
+    paddingRight: 12,
+  },
+
+  petChip: {
+    minWidth: 132,
+    padding: 10,
+    paddingRight: 15,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#DCE9E7",
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+  },
+
+  petChipActive: {
+    borderColor: "#0F766E",
+    backgroundColor: "#E6F7F4",
+  },
+
+  petAvatar: {
+    width: 35,
+    height: 35,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F1F5F4",
+  },
+
+  petAvatarActive: {
+    backgroundColor: "#FFFFFF",
+  },
+
+  petName: {
+    color: "#334155",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  petNameActive: {
     color: "#0F766E",
   },
 
-  petPillTextActive: {
-    color: "#FFFFFF",
+  petSpecies: {
+    marginTop: 1,
+    color: "#94A3B8",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+
+  petSpeciesActive: {
+    color: "#0F766E",
   },
 
   summaryCard: {
-    backgroundColor: "#0F766E",
-    borderRadius: 28,
-    padding: 20,
-    marginBottom: 18,
-    shadowColor: "#0F766E",
-    shadowOpacity: 0.24,
-    shadowRadius: 14,
-    elevation: 4,
-  },
-
-  summaryTop: {
+    marginTop: 18,
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E0EFEC",
     flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
+    alignItems: "center",
   },
 
-  summaryLabel: {
-    color: "#BFF6EE",
-    fontSize: 12,
-    fontWeight: "800",
-    marginBottom: 4,
+  summaryIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#DFF7F4",
+  },
+
+  summaryText: {
+    flex: 1,
+    marginLeft: 12,
   },
 
   summaryTitle: {
-    color: "#FFFFFF",
-    fontSize: 22,
+    color: "#0F172A",
+    fontSize: 15,
     fontWeight: "900",
   },
 
-  summaryInfo: {
-    color: "#DDFCF8",
-    fontSize: 13,
-    marginTop: 4,
+  summarySubtitle: {
+    marginTop: 3,
+    color: "#64748B",
+    fontSize: 12,
     fontWeight: "600",
   },
 
-  summaryBadge: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 14,
-    height: 34,
+  countBadge: {
+    minWidth: 35,
+    height: 35,
+    paddingHorizontal: 9,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#DFF7F4",
   },
 
-  summaryBadgeText: {
-    color: "#EF4444",
+  countBadgeWarning: {
+    backgroundColor: "#FEE2E2",
+  },
+
+  countText: {
+    color: "#0F766E",
+    fontSize: 16,
     fontWeight: "900",
-    fontSize: 12,
   },
 
-  statsRow: {
-    marginTop: 22,
-    backgroundColor: "rgba(255,255,255,0.13)",
+  countTextWarning: {
+    color: "#DC2626",
+  },
+
+  /* NOVO CARD DE CONTAGEM REGRESSIVA */
+  countdownCard: {
+    marginTop: 14,
+    padding: 17,
     borderRadius: 22,
-    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "#BFE4DF",
+    backgroundColor: "#F0FDFA",
+  },
+
+  countdownTop: {
     flexDirection: "row",
     alignItems: "center",
   },
 
-  statItem: {
-    flex: 1,
+  countdownBell: {
+    width: 43,
+    height: 43,
+    borderRadius: 15,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
+    justifyContent: "center",
   },
 
-  statNumber: {
-    color: "#FFFFFF",
-    fontSize: 22,
+  countdownHeading: {
+    flex: 1,
+    marginLeft: 11,
+  },
+
+  countdownEyebrow: {
+    color: "#0F766E",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+  },
+
+  countdownPet: {
+    marginTop: 3,
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  countdownMain: {
+    marginTop: 18,
+  },
+
+  countdownNumber: {
+    color: "#0F766E",
+    fontSize: 28,
     fontWeight: "900",
   },
 
-  statLabel: {
-    color: "#DDFCF8",
+  countdownNumberUrgent: {
+    color: "#D97706",
+  },
+
+  countdownDate: {
+    marginTop: 4,
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  countdownReason: {
+    marginTop: 5,
+    color: "#64748B",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+
+  countdownDivider: {
+    height: 1,
+    marginVertical: 14,
+    backgroundColor: "#CCECE7",
+  },
+
+  countdownFooter: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+
+  countdownFooterText: {
+    flex: 1,
+    color: "#475569",
     fontSize: 11,
-    fontWeight: "700",
-    marginTop: 2,
-    textAlign: "center",
+    lineHeight: 17,
+    fontWeight: "600",
   },
 
-  statDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: "rgba(255,255,255,0.25)",
-  },
-
-  filtersScroll: {
-    marginBottom: 20,
+  filterRow: {
+    marginTop: 16,
+    padding: 4,
+    borderRadius: 16,
+    backgroundColor: "#E8F1EF",
+    flexDirection: "row",
   },
 
   filterButton: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 16,
+    flex: 1,
     paddingVertical: 10,
-    borderRadius: 16,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
+    borderRadius: 13,
+    alignItems: "center",
   },
 
-  filterActive: {
-    backgroundColor: "#0F766E",
-    borderColor: "#0F766E",
+  filterButtonActive: {
+    backgroundColor: "#FFFFFF",
   },
 
   filterText: {
     color: "#64748B",
+    fontSize: 12,
     fontWeight: "800",
-    fontSize: 13,
   },
 
   filterTextActive: {
-    color: "#FFFFFF",
+    color: "#0F766E",
   },
 
-  sectionHeader: {
-    marginBottom: 12,
+  timeline: {
+    marginTop: 16,
+    gap: 12,
+  },
+
+  agendaCard: {
+    overflow: "hidden",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#E2ECEA",
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+  },
+
+  agendaAccent: {
+    width: 5,
+  },
+
+  dateBox: {
+    width: 58,
+    height: 62,
+    margin: 13,
+    marginRight: 3,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  dateDay: {
+    fontSize: 21,
+    fontWeight: "900",
+  },
+
+  dateMonth: {
+    marginTop: -2,
+    fontSize: 9,
+    fontWeight: "900",
+  },
+
+  agendaContent: {
+    flex: 1,
+    padding: 14,
+    paddingLeft: 10,
+  },
+
+  agendaTopRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
 
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  sectionCount: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#94A3B8",
-  },
-
-  emptyBox: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 22,
-    marginBottom: 16,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-  },
-
-  emptyTitle: {
-    marginTop: 10,
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  emptyText: {
-    marginTop: 6,
-    fontSize: 12,
-    color: "#64748B",
-    fontWeight: "600",
-    lineHeight: 18,
-    textAlign: "center",
-  },
-
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-    shadowColor: "#0F766E",
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-
-  cardTop: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  iconBox: {
-    width: 54,
-    height: 54,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 13,
-  },
-
-  cardContent: {
-    flex: 1,
-  },
-
-  type: {
-    fontWeight: "900",
-    fontSize: 11,
-    marginBottom: 3,
-    textTransform: "uppercase",
-  },
-
-  eventTitle: {
-    fontSize: 17,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  petInfo: {
-    color: "#64748B",
-    marginTop: 3,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-
-  statusBox: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
 
   statusText: {
+    fontSize: 9,
     fontWeight: "900",
-    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 
-  cardBottom: {
-    marginTop: 14,
-    backgroundColor: "#F8FAFC",
-    borderRadius: 18,
-    padding: 12,
-    gap: 8,
+  agendaTitle: {
+    marginTop: 8,
+    color: "#0F172A",
+    fontSize: 16,
+    fontWeight: "900",
   },
 
-  infoLine: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-
-  infoText: {
-    flex: 1,
-    color: "#64748B",
-    fontSize: 12,
-    fontWeight: "600",
-    lineHeight: 17,
-  },
-
-  priorityRow: {
-    marginTop: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-
-  priorityDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-  },
-
-  priorityText: {
+  agendaDescription: {
+    marginTop: 4,
     color: "#475569",
     fontSize: 12,
+    lineHeight: 18,
+  },
+
+  metaWrap: {
+    marginTop: 9,
+    gap: 5,
+  },
+
+  metaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  metaText: {
+    flex: 1,
+    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+
+  cardAction: {
+    alignSelf: "flex-start",
+    marginTop: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
+  cardActionText: {
+    color: "#0F766E",
+    fontSize: 11,
     fontWeight: "800",
   },
 
-  aiBox: {
-    backgroundColor: "#ECFEFF",
-    borderColor: "#A5F3FC",
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: 18,
-    marginTop: 8,
-    marginBottom: 14,
-    flexDirection: "row",
-    gap: 13,
+  cancelText: {
+    color: "#B91C1C",
   },
 
-  aiIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 18,
+  emptyAgenda: {
+    marginTop: 28,
+    alignItems: "center",
+    padding: 28,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#DCEBE8",
     backgroundColor: "#FFFFFF",
+  },
+
+  emptyAgendaIcon: {
+    width: 78,
+    height: 78,
+    borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#DFF7F4",
   },
 
-  aiTitle: {
-    color: "#155E75",
-    fontWeight: "900",
-    fontSize: 17,
-    marginBottom: 5,
-  },
-
-  aiText: {
-    color: "#155E75",
-    lineHeight: 20,
-    fontWeight: "600",
-    fontSize: 12,
-  },
-
-  tipBox: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    padding: 17,
-    marginBottom: 45,
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-  },
-
-  tipTitle: {
+  emptyTitle: {
+    marginTop: 16,
     color: "#0F172A",
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: "900",
-    marginBottom: 5,
+    textAlign: "center",
   },
 
-  tipText: {
+  emptyDescription: {
+    marginTop: 7,
     color: "#64748B",
-    fontSize: 12,
-    fontWeight: "600",
-    lineHeight: 19,
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: "center",
   },
 
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.45)",
-    justifyContent: "flex-end",
+  primaryButton: {
+    marginTop: 18,
+    minHeight: 47,
+    paddingHorizontal: 20,
+    borderRadius: 15,
+    backgroundColor: "#0F766E",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
   },
 
-  modalBox: {
+  primaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  historyBanner: {
+    marginTop: 18,
+    padding: 14,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: "#BFE4DF",
+    backgroundColor: "#EDFAF8",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  historyIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: "#FFFFFF",
+  },
+
+  historyText: {
+    flex: 1,
+    marginHorizontal: 11,
+  },
+
+  historyTitle: {
+    color: "#134E4A",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  historySubtitle: {
+    marginTop: 3,
+    color: "#0F766E",
+    fontSize: 11,
+    lineHeight: 16,
+  },
+
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(15,23,42,0.45)",
+  },
+
+  modalCard: {
+    maxHeight: "92%",
+    padding: 20,
+    paddingTop: 10,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    padding: 20,
-    maxHeight: "70%",
+    backgroundColor: "#FFFFFF",
+  },
+
+  modalHandle: {
+    alignSelf: "center",
+    width: 42,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#CBD5E1",
+    marginBottom: 15,
   },
 
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingBottom: 16,
+    marginBottom: 20,
   },
 
   modalTitle: {
-    fontSize: 19,
-    fontWeight: "900",
     color: "#0F172A",
+    fontSize: 22,
+    fontWeight: "900",
   },
 
-  modalItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 13,
-    paddingVertical: 13,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+  modalSubtitle: {
+    marginTop: 3,
+    color: "#64748B",
+    fontSize: 12,
   },
 
-  modalItemActive: {
-    backgroundColor: "#F0FDFA",
-    borderRadius: 16,
-    borderBottomColor: "transparent",
-    paddingHorizontal: 12,
-  },
-
-  modalItemIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: "#E0F5F2",
+  closeButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#F1F5F9",
   },
 
-  modalItemIconActive: {
+  inputLabel: {
+    marginBottom: 7,
+    color: "#334155",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  typeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 17,
+  },
+
+  typeOption: {
+    flex: 1,
+    minHeight: 66,
+    padding: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#DCE8E6",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F8FBFB",
+  },
+
+  typeOptionActive: {
+    borderColor: "#0F766E",
     backgroundColor: "#0F766E",
   },
 
-  modalItemNome: {
-    fontSize: 16,
-    fontWeight: "900",
+  typeText: {
+    marginTop: 4,
     color: "#64748B",
+    fontSize: 10,
+    fontWeight: "800",
   },
 
-  modalItemNomeActive: {
+  typeTextActive: {
+    color: "#FFFFFF",
+  },
+
+  twoColumns: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  formField: {
+    flex: 1,
+    marginBottom: 15,
+  },
+
+  formFieldFull: {
+    flex: 0,
+  },
+
+  inputBox: {
+    minHeight: 50,
+    paddingHorizontal: 13,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#DCE8E6",
+    backgroundColor: "#F8FBFB",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  inputBoxMultiline: {
+    minHeight: 82,
+    alignItems: "flex-start",
+    paddingTop: 14,
+  },
+
+  input: {
+    flex: 1,
     color: "#0F172A",
+    fontSize: 13,
   },
 
-  modalItemSub: {
+  inputMultiline: {
+    minHeight: 58,
+    textAlignVertical: "top",
+  },
+
+  pickerSection: {
+    marginBottom: 15,
+  },
+
+  choiceRow: {
+    gap: 8,
+    paddingRight: 8,
+  },
+
+  choiceChip: {
+    minWidth: 105,
+    maxWidth: 160,
+    minHeight: 54,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: "#DCE8E6",
+    backgroundColor: "#F8FBFB",
+    justifyContent: "center",
+  },
+
+  choiceChipActive: {
+    borderColor: "#0F766E",
+    backgroundColor: "#E6F7F4",
+  },
+
+  choiceLabel: {
+    color: "#334155",
     fontSize: 12,
-    color: "#94A3B8",
-    fontWeight: "600",
+    fontWeight: "800",
+  },
+
+  choiceLabelActive: {
+    color: "#0F766E",
+  },
+
+  choiceCaption: {
     marginTop: 2,
+    color: "#94A3B8",
+    fontSize: 9,
+  },
+
+  choiceCaptionActive: {
+    color: "#0F766E",
+  },
+
+  saveButton: {
+    minHeight: 53,
+    marginTop: 3,
+    marginBottom: 18,
+    borderRadius: 17,
+    backgroundColor: "#0F766E",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
+  saveButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "900",
   },
 });

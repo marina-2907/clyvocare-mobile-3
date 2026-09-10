@@ -1,1369 +1,278 @@
-import React, { useCallback, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
-  Modal,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform,
+  RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput,
+  TouchableOpacity, View,
 } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect } from "@react-navigation/native";
-import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
+import {
+  useAppointments, useCreateLocalHistory, useDeleteLocalHistory, useExams,
+  useLocalHistory, useTreatments, useVaccinations,
+} from "../hooks/useClinical";
+import { useOwnerProfile } from "../hooks/useOwnerProfile";
+import { usePets } from "../hooks/usePets";
+import { SelfReportedEventType } from "../types/clinical";
+import {
+  decodeReasonWithTime, displayDateToApi, formatApiDate, formatDateInput,
+  formatTimeInput, isValidDisplayDate, isValidTime, todayApiDate, todayDisplayDate,
+} from "../utils/date";
 
-const PETS_KEY = "@clyvocare_pets";
-const HISTORICO_KEY = "@clyvocare_historico_pets";
-
-type Pet = {
-  id: string;
-  nome: string;
-  especie?: string;
-  especieId?: string;
-  raca?: string;
+type HistoryFilter = "ALL" | SelfReportedEventType;
+type UnifiedHistory = {
+  key: string;
+  localId: string | null;
+  type: SelfReportedEventType;
+  date: string;
+  time: string | null;
+  title: string;
+  subtitle: string;
+  details: string | null;
+  professional: string | null;
+  clinic: string | null;
+  source: "OFFICIAL" | "TUTOR";
 };
 
-type TipoHistorico = "consulta" | "vacina" | "exame" | "tratamento";
-
-type HistoricoPet = {
-  id: string;
-  petId: string;
-  tipo: TipoHistorico;
-  titulo: string;
-  descricao: string;
-  data: string;
-  scoreSaude: number;
-};
-
-const TIPOS: {
-  id: TipoHistorico;
+const TYPE_OPTIONS: {
+  value: SelfReportedEventType;
   label: string;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
 }[] = [
-  { id: "consulta", label: "Consulta", icon: "stethoscope" },
-  { id: "vacina", label: "Vacina", icon: "needle" },
-  { id: "exame", label: "Exame", icon: "file-document-outline" },
-  { id: "tratamento", label: "Tratamento", icon: "pill" },
+  { value: "VACCINE", label: "Vacina", icon: "shield-checkmark-outline", color: "#2563EB" },
+  { value: "APPOINTMENT", label: "Consulta", icon: "medical-outline", color: "#0F766E" },
+  { value: "EXAM", label: "Exame", icon: "flask-outline", color: "#7C3AED" },
+  { value: "TREATMENT", label: "Tratamento", icon: "medkit-outline", color: "#D97706" },
 ];
 
-export default function HistoryScreen({ navigation }: any) {
-  const [pets, setPets] = useState<Pet[]>([]);
-  const [petSelecionadoId, setPetSelecionadoId] = useState<string | null>(null);
-  const [historico, setHistorico] = useState<HistoricoPet[]>([]);
+function typeMeta(type: SelfReportedEventType) {
+  return TYPE_OPTIONS.find((item) => item.value === type) ?? TYPE_OPTIONS[0];
+}
 
-  const [modalVisivel, setModalVisivel] = useState(false);
-  const [tipo, setTipo] = useState<TipoHistorico>("consulta");
-  const [titulo, setTitulo] = useState("");
-  const [descricao, setDescricao] = useState("");
-  const [data, setData] = useState("");
-  const [scoreSaude, setScoreSaude] = useState("");
+export default function TimelineScreen({ navigation }: any) {
+  const { data: owner, isLoading: ownerLoading } = useOwnerProfile();
+  const { data: pets = [], isLoading: petsLoading, refetch: refetchPets } = usePets(owner?.id);
+  const [selectedPetId, setSelectedPetId] = useState<number>();
+  const [filter, setFilter] = useState<HistoryFilter>("ALL");
+  const [modalVisible, setModalVisible] = useState(false);
+  const [eventType, setEventType] = useState<SelfReportedEventType>("VACCINE");
+  const [title, setTitle] = useState("");
+  const [date, setDate] = useState(todayDisplayDate());
+  const [time, setTime] = useState("");
+  const [professional, setProfessional] = useState("");
+  const [clinic, setClinic] = useState("");
+  const [details, setDetails] = useState("");
 
-  const carregarDados = useCallback(async () => {
-    try {
-      const petsSalvos = await AsyncStorage.getItem(PETS_KEY);
-      const historicoSalvo = await AsyncStorage.getItem(HISTORICO_KEY);
+  useEffect(() => {
+    if (!pets.length) return setSelectedPetId(undefined);
+    if (!pets.some((pet) => pet.id === selectedPetId)) setSelectedPetId(pets[0].id);
+  }, [pets, selectedPetId]);
 
-      const listaPets: Pet[] = petsSalvos ? JSON.parse(petsSalvos) : [];
-      const listaHistorico: HistoricoPet[] = historicoSalvo
-        ? JSON.parse(historicoSalvo)
-        : [];
+  const appointments = useAppointments(selectedPetId);
+  const vaccinations = useVaccinations(selectedPetId);
+  const exams = useExams(selectedPetId);
+  const treatments = useTreatments(selectedPetId);
+  const localHistory = useLocalHistory(selectedPetId);
+  const createLocalHistory = useCreateLocalHistory();
+  const deleteLocalHistory = useDeleteLocalHistory();
+  const selectedPet = pets.find((pet) => pet.id === selectedPetId);
 
-        console.log("HISTÓRICO CARREGADO:", listaHistorico);
+  const history = useMemo<UnifiedHistory[]>(() => {
+    const appointmentItems: UnifiedHistory[] = (appointments.data ?? [])
+      .filter((item) => item.status !== "SCHEDULED")
+      .map((item) => {
+        const parsed = decodeReasonWithTime(item.reason);
+        return {
+          key: `appointment-${item.id}`,
+          localId: null,
+          type: "APPOINTMENT",
+          date: item.appointmentDate,
+          time: parsed.time,
+          title: item.status === "COMPLETED" ? "Consulta realizada" : "Consulta cancelada",
+          subtitle: parsed.reason,
+          details: item.diagnosis ?? item.notes,
+          professional: item.veterinarianName,
+          clinic: item.clinicName,
+          source: "OFFICIAL",
+        };
+      });
+    const vaccineItems: UnifiedHistory[] = (vaccinations.data ?? []).map((item) => ({
+      key: `vaccine-${item.id}`,
+      localId: null,
+      type: "VACCINE",
+      date: item.applicationDate,
+      time: null,
+      title: item.vaccineName,
+      subtitle: item.nextDoseDate ? `Próxima dose: ${formatApiDate(item.nextDoseDate)}` : "Aplicação registrada",
+      details: item.batch ? `Lote ${item.batch}` : null,
+      professional: item.veterinarianName,
+      clinic: null,
+      source: "OFFICIAL",
+    }));
+    const examItems: UnifiedHistory[] = (exams.data ?? []).map((item) => ({
+      key: `exam-${item.id}`,
+      localId: null,
+      type: "EXAM",
+      date: item.resultDate ?? item.requestDate,
+      time: null,
+      title: item.examType,
+      subtitle: item.resultDate ? "Resultado disponível" : "Exame solicitado",
+      details: item.result,
+      professional: item.laboratory,
+      clinic: null,
+      source: "OFFICIAL",
+    }));
+    const treatmentItems: UnifiedHistory[] = (treatments.data ?? []).map((item) => ({
+      key: `treatment-${item.id}`,
+      localId: null,
+      type: "TREATMENT",
+      date: item.endDate ?? item.startDate,
+      time: null,
+      title: "Tratamento",
+      subtitle: item.status === "ACTIVE" ? "Em andamento" : item.status === "COMPLETED" ? "Concluído" : "Suspenso",
+      details: item.description,
+      professional: null,
+      clinic: null,
+      source: "OFFICIAL",
+    }));
+    const tutorItems: UnifiedHistory[] = (localHistory.data ?? []).map((item) => ({
+      key: `local-${item.id}`,
+      localId: item.id,
+      type: item.type,
+      date: item.eventDate,
+      time: item.eventTime,
+      title: item.title,
+      subtitle: "Informado pelo tutor",
+      details: item.details,
+      professional: item.professional,
+      clinic: item.clinic,
+      source: "TUTOR",
+    }));
+    return [...appointmentItems, ...vaccineItems, ...examItems, ...treatmentItems, ...tutorItems]
+      .filter((item) => filter === "ALL" || item.type === filter)
+      .sort((a, b) => `${b.date}${b.time ?? ""}`.localeCompare(`${a.date}${a.time ?? ""}`));
+  }, [appointments.data, vaccinations.data, exams.data, treatments.data, localHistory.data, filter]);
 
-      setPets(listaPets);
-      setHistorico(listaHistorico);
+  const officialCount = history.filter((item) => item.source === "OFFICIAL").length;
+  const tutorCount = history.filter((item) => item.source === "TUTOR").length;
+  const isLoading = ownerLoading || petsLoading || (Boolean(selectedPetId) && [appointments, vaccinations, exams, treatments, localHistory].some((query) => query.isLoading));
+  const refreshing = [appointments, vaccinations, exams, treatments, localHistory].some((query) => query.isRefetching);
 
-      if (listaPets.length > 0 && !petSelecionadoId) {
-        setPetSelecionadoId(listaPets[0].id);
-      }
-    } catch {
-      setPets([]);
-      setHistorico([]);
-    }
-  }, [petSelecionadoId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      carregarDados();
-    }, [carregarDados]),
-  );
-
-  const petSelecionado = pets.find((pet) => pet.id === petSelecionadoId);
-
-  const historicoDoPet = historico
-    .filter((item) => item.petId === petSelecionadoId)
-    .sort((a, b) => {
-      const dataA = converterDataParaNumero(a.data);
-      const dataB = converterDataParaNumero(b.data);
-      return dataA - dataB;
-    });
-
-  const ultimoScore =
-    historicoDoPet.length > 0
-      ? historicoDoPet[historicoDoPet.length - 1].scoreSaude
-      : 0;
-
-  function abrirModal() {
-    if (!petSelecionadoId) {
-      Alert.alert("Atenção", "Cadastre um pet antes de adicionar histórico.");
-      return;
-    }
-
-    setTipo("consulta");
-    setTitulo("");
-    setDescricao("");
-    setData(new Date().toLocaleDateString("pt-BR"));
-    setScoreSaude("");
-    setModalVisivel(true);
+  async function refresh() {
+    await Promise.all([refetchPets(), appointments.refetch(), vaccinations.refetch(), exams.refetch(), treatments.refetch(), localHistory.refetch()]);
   }
 
-  async function salvarHistorico() {
-    if (!petSelecionadoId) return;
+  function resetForm() {
+    setEventType("VACCINE"); setTitle(""); setDate(todayDisplayDate()); setTime("");
+    setProfessional(""); setClinic(""); setDetails("");
+  }
 
-    if (!titulo.trim()) {
-      Alert.alert("Atenção", "Digite o título do registro.");
-      return;
-    }
-
-    const dataValida = /^\d{2}\/\d{2}\/\d{4}$/.test(data.trim());
-
-    if (!dataValida) {
-      Alert.alert("Atenção", "Digite a data no formato DD/MM/AAAA.");
-      return;
-    }
-
-    const scoreNumero = Number(scoreSaude.replace(",", "."));
-
-    if (!scoreSaude.trim() || Number.isNaN(scoreNumero)) {
-      Alert.alert("Atenção", "Digite uma nota de saúde entre 0 e 100.");
-      return;
-    }
-
-    if (scoreNumero < 0 || scoreNumero > 100) {
-      Alert.alert("Atenção", "A nota de saúde precisa estar entre 0 e 100.");
-      return;
-    }
-
-    const novoRegistro: HistoricoPet = {
-      id: Date.now().toString(),
-      petId: petSelecionadoId,
-      tipo,
-      titulo: titulo.trim(),
-      descricao: descricao.trim() || "Sem descrição informada.",
-      data: data.trim(),
-      scoreSaude: Math.round(scoreNumero),
-    };
-
-    const novoHistorico = [...historico, novoRegistro];
-
-    console.log("HISTÓRICO SALVO:", novoRegistro);
-    console.log("TOTAL DE REGISTROS:", novoHistorico.length);
-
+  async function saveMemory() {
+    if (!selectedPetId) return;
+    if (!title.trim()) return Alert.alert("Título obrigatório", "Informe o nome da vacina, consulta, exame ou tratamento.");
+    if (!isValidDisplayDate(date)) return Alert.alert("Data inválida", "Use o formato dia/mês/ano.");
+    if (time && !isValidTime(time)) return Alert.alert("Horário inválido", "Use um horário entre 00:00 e 23:59.");
+    const eventDate = displayDateToApi(date);
+    if (!eventDate || eventDate > todayApiDate()) return Alert.alert("Data inválida", "O histórico não pode ter uma data futura.");
     try {
-      await AsyncStorage.setItem(HISTORICO_KEY, JSON.stringify(novoHistorico));
-      setHistorico(novoHistorico);
-      setModalVisivel(false);
-
-      Alert.alert("Histórico salvo", "O registro foi adicionado com sucesso.");
+      await createLocalHistory.mutateAsync({
+        petId: selectedPetId,
+        type: eventType,
+        title: title.trim(),
+        eventDate,
+        eventTime: time || null,
+        professional: professional.trim() || null,
+        clinic: clinic.trim() || null,
+        details: details.trim() || null,
+      });
+      setModalVisible(false); resetForm();
+      Alert.alert("Adicionado ao histórico", "O registro foi identificado como informação do tutor.");
     } catch {
-      Alert.alert("Erro", "Não foi possível salvar o histórico.");
+      Alert.alert("Erro", "Não foi possível salvar este registro.");
     }
   }
 
-  async function excluirRegistro(id: string) {
-    Alert.alert("Excluir registro", "Deseja remover este item do histórico?", [
+  function askDelete(item: UnifiedHistory) {
+    if (!item.localId || !selectedPetId) return;
+    Alert.alert("Excluir lembrança", "Deseja remover este registro informado pelo tutor?", [
       { text: "Cancelar", style: "cancel" },
-      {
-        text: "Excluir",
-        style: "destructive",
-        onPress: async () => {
-          const novoHistorico = historico.filter((item) => item.id !== id);
-          await AsyncStorage.setItem(
-            HISTORICO_KEY,
-            JSON.stringify(novoHistorico),
-          );
-          setHistorico(novoHistorico);
-        },
-      },
+      { text: "Excluir", style: "destructive", onPress: () => void deleteLocalHistory.mutateAsync({ eventId: item.localId!, petId: selectedPetId }) },
     ]);
   }
 
-  return (
-    <>
-      <StatusBar barStyle="dark-content" backgroundColor="#F6FBFA" />
+  if (isLoading) return <View style={styles.center}><ActivityIndicator size="large" color="#0F766E" /><Text style={styles.loadingText}>Montando o histórico...</Text></View>;
 
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.pageTitle}>Histórico do Pet</Text>
-            <Text style={styles.pageSubtitle}>
-              Salve consultas, vacinas, exames e acompanhe a evolução da saúde.
-            </Text>
-          </View>
+  return <View style={styles.container}>
+    <StatusBar barStyle="light-content" backgroundColor="#0F766E" />
+    <View style={styles.header}>
+      <View><Text style={styles.eyebrow}>PRONTUÁRIO LONGITUDINAL</Text><Text style={styles.headerTitle}>Histórico</Text><Text style={styles.headerSubtitle}>Toda a jornada de saúde do seu pet</Text></View>
+      <TouchableOpacity style={[styles.addButton, !selectedPetId && styles.disabled]} disabled={!selectedPetId} onPress={() => setModalVisible(true)}><Ionicons name="add" size={27} color="#FFFFFF" /></TouchableOpacity>
+    </View>
 
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={abrirModal}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="add" size={24} color="#FFFFFF" />
-          </TouchableOpacity>
+    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} colors={["#0F766E"]} />}>
+      {!pets.length ? <EmptyHistory onAddPet={() => navigation.navigate("Cadastrar Pet")} /> : <>
+        <Text style={styles.sectionLabel}>HISTÓRICO DE</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.petRow}>{pets.map((pet) => { const active = pet.id === selectedPetId; return <TouchableOpacity key={pet.id} style={[styles.petChip, active && styles.petChipActive]} onPress={() => setSelectedPetId(pet.id)}><View style={[styles.petAvatar, active && styles.petAvatarActive]}><Ionicons name="paw" size={17} color={active ? "#0F766E" : "#64748B"} /></View><View><Text style={[styles.petName, active && styles.petNameActive]}>{pet.name}</Text><Text style={styles.petSpecies}>{pet.speciesName}</Text></View></TouchableOpacity>; })}</ScrollView>
+
+        <View style={styles.summaryRow}>
+          <SummaryCard icon="shield-checkmark-outline" value={officialCount} label="Registros oficiais" color="#0F766E" />
+          <SummaryCard icon="create-outline" value={tutorCount} label="Anotações do tutor" color="#7C3AED" />
         </View>
 
-        {pets.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <MaterialCommunityIcons
-              name="paw-outline"
-              size={44}
-              color="#00796B"
-            />
-            <Text style={styles.emptyTitle}>Nenhum pet cadastrado</Text>
-            <Text style={styles.emptyText}>
-              Cadastre um pet primeiro para começar a salvar o histórico.
-            </Text>
+        <View style={styles.infoBanner}><Ionicons name="information-circle-outline" size={22} color="#2563EB" /><Text style={styles.infoText}>Registros da API são oficiais. Cuidados antigos adicionados por você aparecem claramente como “Informado pelo tutor”.</Text></View>
 
-            <TouchableOpacity
-              style={styles.emptyButton}
-              onPress={() => navigation.navigate("Cadastrar Pet")}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.emptyButtonText}>Cadastrar pet</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            <View style={styles.petSelectorCard}>
-              <View style={styles.petSelectorTop}>
-                <View style={styles.petIconBox}>
-                  <MaterialCommunityIcons
-                    name={getIconePet(petSelecionado?.especieId)}
-                    size={28}
-                    color="#00796B"
-                  />
-                </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+          <FilterChip label="Tudo" active={filter === "ALL"} onPress={() => setFilter("ALL")} />
+          {TYPE_OPTIONS.map((item) => <FilterChip key={item.value} label={item.label} active={filter === item.value} onPress={() => setFilter(item.value)} />)}
+        </ScrollView>
 
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.petSelectorLabel}>Histórico de</Text>
-                  <Text style={styles.petSelectorName}>
-                    {petSelecionado?.nome || "Pet"}
-                  </Text>
-                  <Text style={styles.petSelectorBreed}>
-                    {petSelecionado?.raca ||
-                      petSelecionado?.especie ||
-                      "Dados não informados"}
-                  </Text>
-                </View>
+        {!history.length ? <View style={styles.emptyCard}><View style={styles.emptyIcon}><Ionicons name="document-text-outline" size={38} color="#0F766E" /></View><Text style={styles.emptyTitle}>O histórico começa aqui</Text><Text style={styles.emptyText}>Adicione uma vacina antiga, consulta, exame ou tratamento de {selectedPet?.name}.</Text><TouchableOpacity style={styles.primaryButton} onPress={() => setModalVisible(true)}><Ionicons name="add-circle-outline" size={20} color="#FFFFFF" /><Text style={styles.primaryButtonText}>Adicionar registro</Text></TouchableOpacity></View> :
+          <View style={styles.timeline}>{history.map((item, index) => <HistoryCard key={item.key} item={item} last={index === history.length - 1} onDelete={() => askDelete(item)} />)}</View>}
+      </>}
+    </ScrollView>
 
-                <View style={styles.scoreBox}>
-                  <Text style={styles.scoreNumber}>{ultimoScore || "--"}%</Text>
-                  <Text style={styles.scoreLabel}>saúde</Text>
-                </View>
-              </View>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.petTabs}
-            >
-              {pets.map((pet) => {
-                const ativo = petSelecionadoId === pet.id;
-
-                return (
-                  <TouchableOpacity
-                    key={pet.id}
-                    style={[styles.petTab, ativo && styles.petTabActive]}
-                    onPress={() => setPetSelecionadoId(pet.id)}
-                    activeOpacity={0.85}
-                  >
-                    <MaterialCommunityIcons
-                      name="paw"
-                      size={15}
-                      color={ativo ? "#FFFFFF" : "#00796B"}
-                    />
-                    <Text
-                      style={[
-                        styles.petTabText,
-                        ativo && styles.petTabTextActive,
-                      ]}
-                    >
-                      {pet.nome}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <GraficoSaude dados={historicoDoPet} />
-
-            <View style={styles.summaryGrid}>
-              <ResumoCard
-                label="Consultas"
-                valor={
-                  historicoDoPet.filter((item) => item.tipo === "consulta")
-                    .length
-                }
-                icon="stethoscope"
-              />
-
-              <ResumoCard
-                label="Vacinas"
-                valor={
-                  historicoDoPet.filter((item) => item.tipo === "vacina").length
-                }
-                icon="needle"
-              />
-
-              <ResumoCard
-                label="Exames"
-                valor={
-                  historicoDoPet.filter((item) => item.tipo === "exame").length
-                }
-                icon="file-document-outline"
-              />
-            </View>
-
-            <View style={styles.historyCard}>
-              <View style={styles.historyHeader}>
-                <View>
-                  <Text style={styles.historySectionTitle}>
-                    Registros salvos
-                  </Text>
-                  <Text style={styles.historySectionSubtitle}>
-                    Histórico completo de {petSelecionado?.nome || "pet"}
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.addSmallButton}
-                  onPress={abrirModal}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="add" size={21} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
-
-              {historicoDoPet.length === 0 ? (
-                <View style={styles.emptyHistory}>
-                  <Ionicons
-                    name="document-text-outline"
-                    size={34}
-                    color="#00796B"
-                  />
-                  <Text style={styles.emptyHistoryTitle}>
-                    Nenhum registro ainda
-                  </Text>
-                  <Text style={styles.emptyHistoryText}>
-                    Toque no botão + para adicionar a primeira consulta, vacina,
-                    exame ou tratamento.
-                  </Text>
-                </View>
-              ) : (
-                historicoDoPet
-                  .slice()
-                  .reverse()
-                  .map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.historyItem}
-                      activeOpacity={0.85}
-                      onLongPress={() => excluirRegistro(item.id)}
-                    >
-                      <View style={styles.historyIcon}>
-                        <MaterialCommunityIcons
-                          name={getTipoIcon(item.tipo)}
-                          size={22}
-                          color="#00796B"
-                        />
-                      </View>
-
-                      <View style={{ flex: 1 }}>
-                        <View style={styles.historyTopLine}>
-                          <Text style={styles.historyType}>
-                            {getTipoLabel(item.tipo)}
-                          </Text>
-                          <Text style={styles.historyDate}>{item.data}</Text>
-                        </View>
-
-                        <Text style={styles.historyTitle}>{item.titulo}</Text>
-                        <Text style={styles.historyDesc}>{item.descricao}</Text>
-                      </View>
-
-                      <TouchableOpacity
-                        style={styles.deleteHistoryButton}
-                        onPress={() => excluirRegistro(item.id)}
-                        activeOpacity={0.85}
-                      >
-                        <Ionicons
-                          name="trash-outline"
-                          size={17}
-                          color="#EF4444"
-                        />
-                      </TouchableOpacity>
-                    </TouchableOpacity>
-                  ))
-              )}
-            </View>
-          </>
-        )}
-      </ScrollView>
-
-      <Modal visible={modalVisivel} animationType="slide">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity
-              style={styles.modalBackButton}
-              onPress={() => setModalVisivel(false)}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="arrow-back" size={22} color="#00796B" />
-            </TouchableOpacity>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.modalTitle}>Novo histórico</Text>
-              <Text style={styles.modalSubtitle}>
-                Registro para {petSelecionado?.nome || "pet"}
-              </Text>
-            </View>
-          </View>
-
-          <ScrollView
-            style={styles.modalScroll}
-            contentContainerStyle={styles.modalContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.inputLabel}>Tipo de registro</Text>
-
-            <View style={styles.tipoGrid}>
-              {TIPOS.map((item) => {
-                const ativo = tipo === item.id;
-
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[
-                      styles.tipoButton,
-                      ativo && styles.tipoButtonActive,
-                    ]}
-                    onPress={() => setTipo(item.id)}
-                    activeOpacity={0.85}
-                  >
-                    <MaterialCommunityIcons
-                      name={item.icon}
-                      size={22}
-                      color={ativo ? "#FFFFFF" : "#00796B"}
-                    />
-                    <Text
-                      style={[
-                        styles.tipoButtonText,
-                        ativo && styles.tipoButtonTextActive,
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <InputField
-              label="Título"
-              placeholder="Ex: Consulta de rotina"
-              value={titulo}
-              onChangeText={setTitulo}
-            />
-
-            <InputField
-              label="Descrição"
-              placeholder="Ex: Check-up geral, pet saudável"
-              value={descricao}
-              onChangeText={setDescricao}
-              multiline
-            />
-
-            <InputField
-              label="Data"
-              placeholder="Ex: 19/05/2026"
-              value={data}
-              onChangeText={(text) => {
-                const apenasNumeros = text.replace(/\D/g, "").slice(0, 8);
-
-                let dataFormatada = apenasNumeros;
-
-                if (apenasNumeros.length > 2) {
-                  dataFormatada = `${apenasNumeros.slice(0, 2)}/${apenasNumeros.slice(2)}`;
-                }
-
-                if (apenasNumeros.length > 4) {
-                  dataFormatada = `${apenasNumeros.slice(0, 2)}/${apenasNumeros.slice(2, 4)}/${apenasNumeros.slice(4)}`;
-                }
-
-                setData(dataFormatada);
-              }}
-              keyboardType="numeric"
-              maxLength={10}
-            />
-
-            <InputField
-              label="Nota de saúde do pet"
-              placeholder="Ex: 85"
-              value={scoreSaude}
-              onChangeText={(text) =>
-                setScoreSaude(text.replace(/[^0-9]/g, ""))
-              }
-              keyboardType="numeric"
-              maxLength={3}
-            />
-
-            <View style={styles.scoreHint}>
-              <Ionicons name="information-circle" size={18} color="#00796B" />
-              <Text style={styles.scoreHintText}>
-                Use uma nota de 0 a 100 para acompanhar a evolução da saúde no
-                gráfico.
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={salvarHistorico}
-              activeOpacity={0.9}
-            >
-              <Ionicons name="save-outline" size={20} color="#FFFFFF" />
-              <Text style={styles.saveButtonText}>Salvar histórico</Text>
-            </TouchableOpacity>
+    <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+      <KeyboardAvoidingView style={styles.modalBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <View style={styles.modalCard}><View style={styles.modalHandle} /><View style={styles.modalHeader}><View><Text style={styles.modalTitle}>Adicionar lembrança</Text><Text style={styles.modalSubtitle}>Um cuidado antigo de {selectedPet?.name}</Text></View><TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}><Ionicons name="close" size={22} color="#334155" /></TouchableOpacity></View>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.inputLabel}>Tipo de registro</Text><View style={styles.typeGrid}>{TYPE_OPTIONS.map((option) => { const active = eventType === option.value; return <TouchableOpacity key={option.value} style={[styles.typeButton, active && { borderColor: option.color, backgroundColor: `${option.color}10` }]} onPress={() => setEventType(option.value)}><Ionicons name={option.icon} size={21} color={active ? option.color : "#64748B"} /><Text style={[styles.typeText, active && { color: option.color }]}>{option.label}</Text>{active && <Ionicons name="checkmark-circle" size={16} color={option.color} />}</TouchableOpacity>; })}</View>
+            <FormInput label={eventType === "VACCINE" ? "Nome da vacina" : eventType === "EXAM" ? "Nome do exame" : eventType === "TREATMENT" ? "Nome do tratamento" : "Motivo da consulta"} value={title} onChangeText={setTitle} placeholder="Ex.: V10 anual" icon="create-outline" />
+            <View style={styles.twoColumns}><FormInput label="Data" value={date} onChangeText={(value) => setDate(formatDateInput(value))} placeholder="DD/MM/AAAA" icon="calendar-outline" keyboardType="numeric" maxLength={10} /><FormInput label="Hora (opcional)" value={time} onChangeText={(value) => setTime(formatTimeInput(value))} placeholder="HH:MM" icon="time-outline" keyboardType="numeric" maxLength={5} /></View>
+            <FormInput label="Profissional (opcional)" value={professional} onChangeText={setProfessional} placeholder="Ex.: Dra. Ana" icon="person-outline" />
+            <FormInput label="Clínica ou local (opcional)" value={clinic} onChangeText={setClinic} placeholder="Ex.: Clínica Clyvo Vet" icon="business-outline" />
+            <FormInput label="Detalhes (opcional)" value={details} onChangeText={setDetails} placeholder="Lote, resultado, observações..." icon="document-text-outline" multiline />
+            <View style={styles.tutorNotice}><Ionicons name="person-circle-outline" size={20} color="#7C3AED" /><Text style={styles.tutorNoticeText}>Este registro será marcado como informação fornecida pelo tutor.</Text></View>
+            <TouchableOpacity style={[styles.saveButton, createLocalHistory.isPending && styles.disabled]} disabled={createLocalHistory.isPending} onPress={() => void saveMemory()}>{createLocalHistory.isPending ? <ActivityIndicator color="#FFFFFF" /> : <><Ionicons name="checkmark-circle-outline" size={21} color="#FFFFFF" /><Text style={styles.saveButtonText}>Salvar no histórico</Text></>}</TouchableOpacity>
           </ScrollView>
         </View>
-      </Modal>
-    </>
-  );
+      </KeyboardAvoidingView>
+    </Modal>
+  </View>;
 }
 
-function GraficoSaude({ dados }: { dados: HistoricoPet[] }) {
-  const largura = 320;
-  const altura = 170;
-  const padding = 28;
-
-  const dadosOrdenados = [...dados].slice(-6);
-
-  if (dadosOrdenados.length === 0) {
-    return (
-      <View style={styles.chartCard}>
-        <View style={styles.chartHeader}>
-          <View>
-            <Text style={styles.chartTitle}>Evolução da saúde</Text>
-            <Text style={styles.chartSubtitle}>
-              O gráfico será gerado após os registros.
-            </Text>
-          </View>
-
-          <View style={styles.chartBadge}>
-            <Text style={styles.chartBadgeText}>--</Text>
-          </View>
-        </View>
-
-        <View style={styles.emptyChartBox}>
-          <Ionicons name="analytics-outline" size={38} color="#00796B" />
-          <Text style={styles.emptyChartText}>
-            Nenhum dado de evolução ainda.
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  const pontos = dadosOrdenados.map((item, index) => {
-    const x =
-      padding +
-      (index * (largura - padding * 2)) /
-        Math.max(dadosOrdenados.length - 1, 1);
-
-    const y =
-      altura - padding - (item.scoreSaude / 100) * (altura - padding * 2);
-
-    return { x, y, score: item.scoreSaude };
-  });
-
-  const path = pontos
-    .map((ponto, index) =>
-      index === 0 ? `M ${ponto.x} ${ponto.y}` : `L ${ponto.x} ${ponto.y}`,
-    )
-    .join(" ");
-
-  const ultimoScore = dadosOrdenados[dadosOrdenados.length - 1].scoreSaude;
-
-  return (
-    <View style={styles.chartCard}>
-      <View style={styles.chartHeader}>
-        <View>
-          <Text style={styles.chartTitle}>Evolução da saúde</Text>
-          <Text style={styles.chartSubtitle}>
-            Últimos {dadosOrdenados.length} registros do pet
-          </Text>
-        </View>
-
-        <View style={styles.chartBadge}>
-          <Text style={styles.chartBadgeText}>{ultimoScore}%</Text>
-        </View>
-      </View>
-
-      <Svg width="100%" height={altura} viewBox={`0 0 ${largura} ${altura}`}>
-        <Line
-          x1={padding}
-          y1={altura - padding}
-          x2={largura - padding}
-          y2={altura - padding}
-          stroke="#D9F3EF"
-          strokeWidth="2"
-        />
-
-        <Line
-          x1={padding}
-          y1={padding}
-          x2={padding}
-          y2={altura - padding}
-          stroke="#D9F3EF"
-          strokeWidth="2"
-        />
-
-        <SvgText
-          x={padding - 8}
-          y={padding + 4}
-          fontSize="10"
-          fill="#64748B"
-          textAnchor="end"
-        >
-          100
-        </SvgText>
-
-        <SvgText
-          x={padding - 8}
-          y={altura - padding + 4}
-          fontSize="10"
-          fill="#64748B"
-          textAnchor="end"
-        >
-          0
-        </SvgText>
-
-        <Path
-          d={path}
-          fill="none"
-          stroke="#00796B"
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-
-        {pontos.map((ponto, index) => (
-          <Circle key={index} cx={ponto.x} cy={ponto.y} r="6" fill="#00796B" />
-        ))}
-      </Svg>
-    </View>
-  );
+function HistoryCard({ item, last, onDelete }: { item: UnifiedHistory; last: boolean; onDelete: () => void }) {
+  const meta = typeMeta(item.type);
+  return <View style={styles.timelineRow}><View style={styles.timelineRail}><View style={[styles.timelineDot, { backgroundColor: meta.color }]}><Ionicons name={meta.icon} size={18} color="#FFFFFF" /></View>{!last && <View style={styles.timelineLine} />}</View><View style={styles.historyCard}>
+    <View style={styles.historyTop}><View style={styles.datePill}><Ionicons name="calendar-outline" size={13} color="#64748B" /><Text style={styles.dateText}>{formatApiDate(item.date)}{item.time ? ` • ${item.time}` : ""}</Text></View><View style={[styles.sourcePill, item.source === "TUTOR" && styles.tutorPill]}><Text style={[styles.sourceText, item.source === "TUTOR" && styles.tutorPillText]}>{item.source === "OFFICIAL" ? "OFICIAL" : "TUTOR"}</Text></View></View>
+    <Text style={styles.historyTitle}>{item.title}</Text><Text style={styles.historySubtitle}>{item.subtitle}</Text>
+    {item.details && <Text style={styles.historyDetails}>{item.details}</Text>}
+    {(item.professional || item.clinic) && <View style={styles.metaBox}>{item.professional && <View style={styles.metaLine}><Ionicons name="person-outline" size={14} color="#64748B" /><Text style={styles.metaText}>{item.professional}</Text></View>}{item.clinic && <View style={styles.metaLine}><Ionicons name="business-outline" size={14} color="#64748B" /><Text style={styles.metaText}>{item.clinic}</Text></View>}</View>}
+    {item.localId && <TouchableOpacity style={styles.deleteButton} onPress={onDelete}><Ionicons name="trash-outline" size={15} color="#B91C1C" /><Text style={styles.deleteText}>Excluir anotação</Text></TouchableOpacity>}
+  </View></View>;
 }
 
-function ResumoCard({
-  label,
-  valor,
-  icon,
-}: {
-  label: string;
-  valor: number;
-  icon: keyof typeof MaterialCommunityIcons.glyphMap;
-}) {
-  return (
-    <View style={styles.summaryCard}>
-      <View style={styles.summaryIcon}>
-        <MaterialCommunityIcons name={icon} size={22} color="#00796B" />
-      </View>
-
-      <Text style={styles.summaryValue}>{valor}</Text>
-      <Text style={styles.summaryLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function InputField({
-  label,
-  placeholder,
-  value,
-  onChangeText,
-  multiline,
-  keyboardType,
-  maxLength,
-}: {
-  label: string;
-  placeholder: string;
-  value: string;
-  onChangeText: (text: string) => void;
-  multiline?: boolean;
-  keyboardType?: any;
-  maxLength?: number;
-}) {
-  return (
-    <View style={styles.inputGroup}>
-      <Text style={styles.inputLabel}>{label}</Text>
-
-      <TextInput
-        style={[styles.input, multiline && styles.inputMultiline]}
-        placeholder={placeholder}
-        placeholderTextColor="#CBD5E1"
-        value={value}
-        onChangeText={onChangeText}
-        multiline={multiline}
-        keyboardType={keyboardType}
-        maxLength={maxLength}
-      />
-    </View>
-  );
-}
-
-function getIconePet(
-  especieId?: string,
-): keyof typeof MaterialCommunityIcons.glyphMap {
-  switch (especieId) {
-    case "cachorro":
-      return "dog";
-    case "gato":
-      return "cat";
-    case "coelho":
-      return "rabbit";
-    case "cobra":
-      return "snake";
-    case "lagarto":
-      return "bug";
-    case "ave":
-      return "bird";
-    case "peixe":
-      return "fish";
-    case "tartaruga":
-    case "jabuti":
-      return "turtle";
-    case "porco":
-    case "miniporco":
-      return "pig";
-    case "vaca":
-    case "minivaca":
-      return "cow";
-    case "cabra":
-      return "sheep";
-    case "hamster":
-    case "porquinho":
-    case "rato":
-    case "chinchila":
-      return "rodent";
-    default:
-      return "paw";
-  }
-}
-
-function getTipoLabel(tipo: TipoHistorico) {
-  switch (tipo) {
-    case "consulta":
-      return "Consulta";
-    case "vacina":
-      return "Vacina";
-    case "exame":
-      return "Exame";
-    case "tratamento":
-      return "Tratamento";
-    default:
-      return "Registro";
-  }
-}
-
-function getTipoIcon(
-  tipo: TipoHistorico,
-): keyof typeof MaterialCommunityIcons.glyphMap {
-  switch (tipo) {
-    case "consulta":
-      return "stethoscope";
-    case "vacina":
-      return "needle";
-    case "exame":
-      return "file-document-outline";
-    case "tratamento":
-      return "pill";
-    default:
-      return "clipboard-text-outline";
-  }
-}
-
-function converterDataParaNumero(data: string) {
-  const partes = data.split("/");
-
-  if (partes.length !== 3) return 0;
-
-  const [dia, mes, ano] = partes.map(Number);
-
-  return new Date(ano, mes - 1, dia).getTime();
-}
+function SummaryCard({ icon, value, label, color }: { icon: keyof typeof Ionicons.glyphMap; value: number; label: string; color: string }) { return <View style={styles.summaryCard}><View style={[styles.summaryIcon, { backgroundColor: `${color}12` }]}><Ionicons name={icon} size={21} color={color} /></View><Text style={styles.summaryValue}>{value}</Text><Text style={styles.summaryLabel}>{label}</Text></View>; }
+function FilterChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) { return <TouchableOpacity style={[styles.filterChip, active && styles.filterChipActive]} onPress={onPress}><Text style={[styles.filterText, active && styles.filterTextActive]}>{label}</Text></TouchableOpacity>; }
+function EmptyHistory({ onAddPet }: { onAddPet: () => void }) { return <View style={styles.emptyCard}><View style={styles.emptyIcon}><Ionicons name="paw-outline" size={40} color="#0F766E" /></View><Text style={styles.emptyTitle}>Nenhum pet cadastrado</Text><Text style={styles.emptyText}>Cadastre um pet para construir o histórico de saúde.</Text><TouchableOpacity style={styles.primaryButton} onPress={onAddPet}><Text style={styles.primaryButtonText}>Cadastrar pet</Text></TouchableOpacity></View>; }
+function FormInput({ label, icon, multiline, ...props }: { label: string; icon: keyof typeof Ionicons.glyphMap; multiline?: boolean } & React.ComponentProps<typeof TextInput>) { return <View style={[styles.formField, multiline && styles.fullField]}><Text style={styles.inputLabel}>{label}</Text><View style={[styles.inputBox, multiline && styles.multilineBox]}><Ionicons name={icon} size={18} color="#0F766E" /><TextInput {...props} multiline={multiline} style={[styles.input, multiline && styles.multilineInput]} placeholderTextColor="#94A3B8" autoComplete="off" importantForAutofill="no" /></View></View>; }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F6FBFA",
-  },
-
-  content: {
-    padding: 18,
-    paddingBottom: 120,
-  },
-
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 14,
-    marginTop: 16,
-    marginBottom: 22,
-  },
-
-  pageTitle: {
-    fontSize: 31,
-    fontWeight: "900",
-    color: "#00796B",
-    letterSpacing: -0.8,
-    lineHeight: 36,
-  },
-
-  pageSubtitle: {
-    marginTop: 8,
-    fontSize: 15,
-    color: "#64748B",
-    fontWeight: "800",
-    lineHeight: 23,
-  },
-
-  headerButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "#00796B",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-  },
-
-  emptyCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 24,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-  },
-
-  emptyTitle: {
-    marginTop: 12,
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  emptyText: {
-    marginTop: 6,
-    fontSize: 13,
-    color: "#64748B",
-    fontWeight: "700",
-    textAlign: "center",
-    lineHeight: 20,
-  },
-
-  emptyButton: {
-    marginTop: 18,
-    backgroundColor: "#00796B",
-    paddingHorizontal: 20,
-    paddingVertical: 13,
-    borderRadius: 999,
-  },
-
-  emptyButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-    fontSize: 14,
-  },
-
-  petSelectorCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-    shadowColor: "#00796B",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-
-  petSelectorTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-
-  petIconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 22,
-    backgroundColor: "#E0F5F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  petSelectorLabel: {
-    fontSize: 11,
-    color: "#00796B",
-    fontWeight: "900",
-  },
-
-  petSelectorName: {
-    fontSize: 22,
-    color: "#0F172A",
-    fontWeight: "900",
-    marginTop: 1,
-    textTransform: "lowercase",
-  },
-
-  petSelectorBreed: {
-    marginTop: 2,
-    fontSize: 13,
-    color: "#64748B",
-    fontWeight: "800",
-  },
-
-  scoreBox: {
-    backgroundColor: "#E0F5F2",
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    alignItems: "center",
-  },
-
-  scoreNumber: {
-    fontSize: 17,
-    color: "#00796B",
-    fontWeight: "900",
-  },
-
-  scoreLabel: {
-    fontSize: 10,
-    color: "#00796B",
-    fontWeight: "800",
-  },
-
-  petTabs: {
-    paddingVertical: 14,
-    gap: 10,
-  },
-
-  petTab: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 999,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-  },
-
-  petTabActive: {
-    backgroundColor: "#00796B",
-    borderColor: "#00796B",
-  },
-
-  petTabText: {
-    color: "#00796B",
-    fontSize: 14,
-    fontWeight: "900",
-    textTransform: "lowercase",
-  },
-
-  petTabTextActive: {
-    color: "#FFFFFF",
-  },
-
-  chartCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 18,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-    shadowColor: "#00796B",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-
-  chartHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-
-  chartTitle: {
-    fontSize: 19,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  chartSubtitle: {
-    marginTop: 3,
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#64748B",
-  },
-
-  chartBadge: {
-    backgroundColor: "#E0F5F2",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-
-  chartBadgeText: {
-    color: "#00796B",
-    fontSize: 13,
-    fontWeight: "900",
-  },
-
-  emptyChartBox: {
-    height: 135,
-    borderRadius: 22,
-    backgroundColor: "#F8FFFE",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#E0F5F2",
-  },
-
-  emptyChartText: {
-    marginTop: 8,
-    color: "#64748B",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
-  summaryGrid: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 16,
-  },
-
-  summaryCard: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-  },
-
-  summaryIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 15,
-    backgroundColor: "#E0F5F2",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  summaryLabel: {
-    marginTop: 2,
-    fontSize: 11,
-    color: "#64748B",
-    fontWeight: "800",
-  },
-
-  historyCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-  },
-
-  historyHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 14,
-  },
-
-  historySectionTitle: {
-    fontSize: 19,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  historySectionSubtitle: {
-    marginTop: 3,
-    fontSize: 12,
-    color: "#64748B",
-    fontWeight: "700",
-  },
-
-  addSmallButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#00796B",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  emptyHistory: {
-    paddingVertical: 26,
-    alignItems: "center",
-  },
-
-  emptyHistoryTitle: {
-    marginTop: 10,
-    fontSize: 17,
-    color: "#0F172A",
-    fontWeight: "900",
-  },
-
-  emptyHistoryText: {
-    marginTop: 5,
-    color: "#64748B",
-    fontSize: 13,
-    fontWeight: "700",
-    textAlign: "center",
-    lineHeight: 20,
-  },
-
-  historyItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
-  },
-
-  historyIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 17,
-    backgroundColor: "#E0F5F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  historyTopLine: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 2,
-  },
-
-  historyType: {
-    fontSize: 11,
-    color: "#00796B",
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-
-  historyDate: {
-    fontSize: 11,
-    color: "#94A3B8",
-    fontWeight: "800",
-  },
-
-  historyTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  historyDesc: {
-    marginTop: 2,
-    fontSize: 12,
-    color: "#64748B",
-    fontWeight: "700",
-    lineHeight: 18,
-  },
-
-  historyScore: {
-    backgroundColor: "#E0F5F2",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 999,
-  },
-
-  historyScoreText: {
-    color: "#00796B",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "#F6FBFA",
-  },
-
-  modalHeader: {
-    height: 118,
-    backgroundColor: "#00796B",
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    paddingTop: 46,
-    paddingHorizontal: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-
-  modalBackButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  modalTitle: {
-    fontSize: 24,
-    color: "#FFFFFF",
-    fontWeight: "900",
-  },
-
-  modalSubtitle: {
-    marginTop: 2,
-    fontSize: 13,
-    color: "#E0FFFA",
-    fontWeight: "700",
-  },
-
-  modalScroll: {
-    flex: 1,
-  },
-
-  modalContent: {
-    padding: 18,
-    paddingBottom: 40,
-  },
-
-  inputLabel: {
-    fontSize: 13,
-    color: "#0F172A",
-    fontWeight: "900",
-    marginBottom: 8,
-  },
-
-  tipoGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 18,
-  },
-
-  tipoButton: {
-    width: "47%",
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-    borderRadius: 20,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  tipoButtonActive: {
-    backgroundColor: "#00796B",
-    borderColor: "#00796B",
-  },
-
-  tipoButtonText: {
-    color: "#00796B",
-    fontSize: 13,
-    fontWeight: "900",
-  },
-
-  tipoButtonTextActive: {
-    color: "#FFFFFF",
-  },
-
-  inputGroup: {
-    marginBottom: 14,
-  },
-
-  input: {
-    minHeight: 54,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-    paddingHorizontal: 14,
-    fontSize: 15,
-    color: "#0F172A",
-    fontWeight: "700",
-  },
-
-  inputMultiline: {
-    minHeight: 96,
-    paddingTop: 14,
-    textAlignVertical: "top",
-  },
-
-  scoreHint: {
-    flexDirection: "row",
-    gap: 8,
-    backgroundColor: "#E0F5F2",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 18,
-  },
-
-  scoreHintText: {
-    flex: 1,
-    color: "#00796B",
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 18,
-  },
-
-  saveButton: {
-    backgroundColor: "#00796B",
-    borderRadius: 20,
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-
-  saveButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  deleteHistoryButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#FEF2F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  container: { flex: 1, backgroundColor: "#F5FAF9" }, center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F5FAF9" }, loadingText: { marginTop: 12, color: "#475569", fontWeight: "700" },
+  header: { paddingTop: 52, paddingBottom: 24, paddingHorizontal: 20, backgroundColor: "#0F766E", borderBottomLeftRadius: 28, borderBottomRightRadius: 28, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, eyebrow: { color: "#99F6E4", fontSize: 10, fontWeight: "900", letterSpacing: 1.4 }, headerTitle: { marginTop: 2, color: "#FFFFFF", fontSize: 29, fontWeight: "900" }, headerSubtitle: { marginTop: 3, color: "#CCFBF1", fontSize: 13, fontWeight: "600" }, addButton: { width: 48, height: 48, borderRadius: 18, backgroundColor: "#14B8A6", alignItems: "center", justifyContent: "center", elevation: 5 }, disabled: { opacity: 0.55 }, content: { padding: 18, paddingBottom: 44 }, sectionLabel: { marginBottom: 9, color: "#64748B", fontSize: 10, fontWeight: "900", letterSpacing: 1.3 },
+  petRow: { gap: 10, paddingRight: 12 }, petChip: { minWidth: 132, padding: 10, paddingRight: 15, borderRadius: 18, borderWidth: 1, borderColor: "#DCE9E7", backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", gap: 9 }, petChipActive: { borderColor: "#0F766E", backgroundColor: "#E6F7F4" }, petAvatar: { width: 35, height: 35, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#F1F5F4" }, petAvatarActive: { backgroundColor: "#FFFFFF" }, petName: { color: "#334155", fontSize: 14, fontWeight: "900" }, petNameActive: { color: "#0F766E" }, petSpecies: { marginTop: 1, color: "#94A3B8", fontSize: 10, fontWeight: "600" },
+  summaryRow: { marginTop: 17, flexDirection: "row", gap: 10 }, summaryCard: { flex: 1, padding: 14, borderRadius: 19, borderWidth: 1, borderColor: "#E0ECEA", backgroundColor: "#FFFFFF" }, summaryIcon: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" }, summaryValue: { marginTop: 10, color: "#0F172A", fontSize: 23, fontWeight: "900" }, summaryLabel: { marginTop: 2, color: "#64748B", fontSize: 10, fontWeight: "700" },
+  infoBanner: { marginTop: 12, padding: 13, borderRadius: 17, borderWidth: 1, borderColor: "#BFDBFE", backgroundColor: "#EFF6FF", flexDirection: "row", alignItems: "flex-start", gap: 9 }, infoText: { flex: 1, color: "#1E3A8A", fontSize: 11, lineHeight: 17, fontWeight: "600" }, filterRow: { gap: 8, paddingVertical: 15, paddingRight: 8 }, filterChip: { paddingHorizontal: 15, paddingVertical: 9, borderRadius: 13, borderWidth: 1, borderColor: "#DCE8E6", backgroundColor: "#FFFFFF" }, filterChipActive: { borderColor: "#0F766E", backgroundColor: "#0F766E" }, filterText: { color: "#64748B", fontSize: 11, fontWeight: "800" }, filterTextActive: { color: "#FFFFFF" },
+  timeline: { marginTop: 2 }, timelineRow: { flexDirection: "row" }, timelineRail: { width: 42, alignItems: "center" }, timelineDot: { width: 36, height: 36, borderRadius: 14, alignItems: "center", justifyContent: "center", zIndex: 2 }, timelineLine: { width: 2, flex: 1, minHeight: 20, backgroundColor: "#D8E7E4" }, historyCard: { flex: 1, marginLeft: 5, marginBottom: 13, padding: 15, borderRadius: 20, borderWidth: 1, borderColor: "#E0ECEA", backgroundColor: "#FFFFFF" }, historyTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, datePill: { flexDirection: "row", alignItems: "center", gap: 4 }, dateText: { color: "#64748B", fontSize: 10, fontWeight: "700" }, sourcePill: { paddingHorizontal: 7, paddingVertical: 4, borderRadius: 7, backgroundColor: "#DFF7F4" }, tutorPill: { backgroundColor: "#F3E8FF" }, sourceText: { color: "#0F766E", fontSize: 8, fontWeight: "900", letterSpacing: 0.5 }, tutorPillText: { color: "#7C3AED" }, historyTitle: { marginTop: 10, color: "#0F172A", fontSize: 16, fontWeight: "900" }, historySubtitle: { marginTop: 3, color: "#64748B", fontSize: 11, fontWeight: "700" }, historyDetails: { marginTop: 9, padding: 10, borderRadius: 12, backgroundColor: "#F7FAFA", color: "#475569", fontSize: 11, lineHeight: 17 }, metaBox: { marginTop: 10, gap: 5 }, metaLine: { flexDirection: "row", alignItems: "center", gap: 6 }, metaText: { flex: 1, color: "#64748B", fontSize: 10 }, deleteButton: { marginTop: 11, flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start" }, deleteText: { color: "#B91C1C", fontSize: 10, fontWeight: "800" },
+  emptyCard: { marginTop: 28, padding: 28, borderRadius: 24, borderWidth: 1, borderColor: "#DCEBE8", backgroundColor: "#FFFFFF", alignItems: "center" }, emptyIcon: { width: 78, height: 78, borderRadius: 28, backgroundColor: "#DFF7F4", alignItems: "center", justifyContent: "center" }, emptyTitle: { marginTop: 16, color: "#0F172A", fontSize: 18, fontWeight: "900", textAlign: "center" }, emptyText: { marginTop: 7, color: "#64748B", fontSize: 13, lineHeight: 20, textAlign: "center" }, primaryButton: { marginTop: 18, minHeight: 47, paddingHorizontal: 20, borderRadius: 15, backgroundColor: "#0F766E", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 }, primaryButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
+  modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(15,23,42,0.45)" }, modalCard: { maxHeight: "94%", padding: 20, paddingTop: 10, borderTopLeftRadius: 30, borderTopRightRadius: 30, backgroundColor: "#FFFFFF" }, modalHandle: { alignSelf: "center", width: 42, height: 5, borderRadius: 3, backgroundColor: "#CBD5E1", marginBottom: 15 }, modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }, modalTitle: { color: "#0F172A", fontSize: 22, fontWeight: "900" }, modalSubtitle: { marginTop: 3, color: "#64748B", fontSize: 12 }, closeButton: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#F1F5F9" }, inputLabel: { marginBottom: 7, color: "#334155", fontSize: 12, fontWeight: "800" },
+  typeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }, typeButton: { width: "48.5%", minHeight: 50, paddingHorizontal: 11, borderRadius: 15, borderWidth: 1, borderColor: "#DCE8E6", backgroundColor: "#F8FBFB", flexDirection: "row", alignItems: "center", gap: 7 }, typeText: { flex: 1, color: "#64748B", fontSize: 11, fontWeight: "800" }, twoColumns: { flexDirection: "row", gap: 10 }, formField: { flex: 1, marginBottom: 14 }, fullField: { flex: 0 }, inputBox: { minHeight: 49, paddingHorizontal: 13, borderRadius: 15, borderWidth: 1, borderColor: "#DCE8E6", backgroundColor: "#F8FBFB", flexDirection: "row", alignItems: "center", gap: 8 }, multilineBox: { minHeight: 82, alignItems: "flex-start", paddingTop: 14 }, input: { flex: 1, color: "#0F172A", fontSize: 13 }, multilineInput: { minHeight: 58, textAlignVertical: "top" }, tutorNotice: { padding: 12, borderRadius: 14, backgroundColor: "#F5F3FF", flexDirection: "row", alignItems: "center", gap: 8 }, tutorNoticeText: { flex: 1, color: "#5B21B6", fontSize: 10, lineHeight: 15, fontWeight: "600" }, saveButton: { minHeight: 53, marginTop: 14, marginBottom: 18, borderRadius: 17, backgroundColor: "#0F766E", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }, saveButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
 });

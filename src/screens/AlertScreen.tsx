@@ -1,1104 +1,135 @@
-import React, { useCallback, useMemo, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+  ActivityIndicator, KeyboardAvoidingView, Platform, RefreshControl,
+  ScrollView, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useFocusEffect } from "@react-navigation/native";
+import {
+  useAppointments, useExams, useLocalHistory, useReminders,
+  useTreatments, useVaccinations,
+} from "../hooks/useClinical";
+import { useOwnerProfile } from "../hooks/useOwnerProfile";
+import { usePets } from "../hooks/usePets";
+import { CareInsight, analyzePetCare, answerCareQuestion } from "../utils/aiInsights";
 
-const PETS_KEY = "@clyvocare_pets";
-const HISTORICO_KEY = "@clyvocare_historico_pets";
-const ALERTAS_RESOLVIDOS_KEY = "@clyvocare_alertas_resolvidos";
+const QUICK_QUESTIONS = [
+  "As vacinas estão em dia?",
+  "Qual é a próxima consulta?",
+  "Existe algum cuidado atrasado?",
+  "Há tratamento ativo?",
+];
 
-type Vacina = {
-  nome: string;
-  emDia: boolean;
-};
+export default function AlertScreen({ navigation }: any) {
+  const { data: owner, isLoading: ownerLoading } = useOwnerProfile();
+  const { data: pets = [], isLoading: petsLoading, refetch: refetchPets } = usePets(owner?.id);
+  const [selectedPetId, setSelectedPetId] = useState<number>();
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [expandedInsight, setExpandedInsight] = useState<string | null>(null);
 
-type Pet = {
-  id: string;
-  nome: string;
-  especie?: string;
-  especieId?: string;
-  raca?: string;
-  idade?: string;
-  peso?: string;
-  unidadePeso?: "kg" | "g";
-  vacinas?: Vacina[];
-  observacoes?: string;
-  situacaoVacinal?: string;
-  castracao?: string;
-};
+  useEffect(() => {
+    if (!pets.length) return setSelectedPetId(undefined);
+    if (!pets.some((pet) => pet.id === selectedPetId)) setSelectedPetId(pets[0].id);
+  }, [pets, selectedPetId]);
 
-type TipoHistorico = "consulta" | "vacina" | "exame" | "tratamento";
+  useEffect(() => {
+    setAnswer(null);
+    setQuestion("");
+  }, [selectedPetId]);
 
-type HistoricoPet = {
-  id: string;
-  petId: string;
-  tipo: TipoHistorico;
-  titulo: string;
-  descricao: string;
-  data: string;
-  scoreSaude: number;
-};
+  const appointments = useAppointments(selectedPetId);
+  const vaccinations = useVaccinations(selectedPetId);
+  const exams = useExams(selectedPetId);
+  const treatments = useTreatments(selectedPetId);
+  const reminders = useReminders();
+  const localHistory = useLocalHistory(selectedPetId);
+  const selectedPet = pets.find((pet) => pet.id === selectedPetId);
 
-type NivelAlerta = "baixo" | "medio" | "alto";
+  const careData = useMemo(() => selectedPet ? {
+    pet: selectedPet,
+    appointments: appointments.data ?? [],
+    vaccinations: vaccinations.data ?? [],
+    exams: exams.data ?? [],
+    treatments: treatments.data ?? [],
+    reminders: (reminders.data ?? []).filter((item) => item.petId === selectedPet.id),
+    localHistory: localHistory.data ?? [],
+  } : null, [selectedPet, appointments.data, vaccinations.data, exams.data, treatments.data, reminders.data, localHistory.data]);
 
-type AlertaIA = {
-  id: string;
-  petId: string;
-  titulo: string;
-  descricao: string;
-  nivel: NivelAlerta;
-  categoria: string;
-  icone: keyof typeof MaterialCommunityIcons.glyphMap;
-};
+  const analysis = useMemo(() => careData ? analyzePetCare(careData) : null, [careData]);
+  const queries = [appointments, vaccinations, exams, treatments, reminders, localHistory];
+  const isLoading = ownerLoading || petsLoading || (Boolean(selectedPetId) && queries.some((query) => query.isLoading));
+  const isRefreshing = queries.some((query) => query.isRefetching);
 
-export default function IAScreen({ navigation }: any) {
-  const [pets, setPets] = useState<Pet[]>([]);
-  const [historico, setHistorico] = useState<HistoricoPet[]>([]);
-  const [petSelecionadoId, setPetSelecionadoId] = useState<string | null>(null);
-  const [alertasResolvidos, setAlertasResolvidos] = useState<string[]>([]);
-
-  const carregarDados = useCallback(async () => {
-    try {
-      const petsSalvos = await AsyncStorage.getItem(PETS_KEY);
-      const historicoSalvo = await AsyncStorage.getItem(HISTORICO_KEY);
-      const resolvidosSalvos = await AsyncStorage.getItem(
-        ALERTAS_RESOLVIDOS_KEY,
-      );
-
-      const listaPets: Pet[] = petsSalvos ? JSON.parse(petsSalvos) : [];
-      const listaHistorico: HistoricoPet[] = historicoSalvo
-        ? JSON.parse(historicoSalvo)
-        : [];
-      const listaResolvidos: string[] = resolvidosSalvos
-        ? JSON.parse(resolvidosSalvos)
-        : [];
-
-      console.log("PETS CARREGADOS NOS ALERTAS IA:", listaPets);
-      console.log("HISTÓRICO CARREGADO NOS ALERTAS IA:", listaHistorico);
-      console.log("ALERTAS RESOLVIDOS CARREGADOS:", listaResolvidos);
-
-      setPets(listaPets);
-      setHistorico(listaHistorico);
-      setAlertasResolvidos(listaResolvidos);
-
-      if (listaPets.length > 0 && !petSelecionadoId) {
-        setPetSelecionadoId(listaPets[0].id);
-      }
-    } catch {
-      setPets([]);
-      setHistorico([]);
-      setAlertasResolvidos([]);
-    }
-  }, [petSelecionadoId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      carregarDados();
-    }, [carregarDados]),
-  );
-
-  const petSelecionado = pets.find((pet) => pet.id === petSelecionadoId);
-
-  const historicoDoPet = useMemo(() => {
-    return historico.filter((item) => item.petId === petSelecionadoId);
-  }, [historico, petSelecionadoId]);
-
-  const alertasGerados = useMemo(() => {
-    if (!petSelecionado) return [];
-
-    return gerarAlertasInteligentes(petSelecionado, historicoDoPet);
-  }, [petSelecionado, historicoDoPet]);
-
-  const alertasAtivos = alertasGerados.filter(
-    (alerta) => !alertasResolvidos.includes(alerta.id),
-  );
-
-  const alertasResolvidosDoPet = alertasGerados.filter((alerta) =>
-    alertasResolvidos.includes(alerta.id),
-  );
-
-  const totalAlto = alertasAtivos.filter(
-    (alerta) => alerta.nivel === "alto",
-  ).length;
-  const totalMedio = alertasAtivos.filter(
-    (alerta) => alerta.nivel === "medio",
-  ).length;
-  const totalBaixo = alertasAtivos.filter(
-    (alerta) => alerta.nivel === "baixo",
-  ).length;
-
-  async function resolverAlerta(alertaId: string) {
-    const novaLista = [...alertasResolvidos, alertaId];
-
-    try {
-      await AsyncStorage.setItem(
-        ALERTAS_RESOLVIDOS_KEY,
-        JSON.stringify(novaLista),
-      );
-
-      console.log("ALERTA IA RESOLVIDO:", alertaId);
-      console.log("LISTA DE ALERTAS RESOLVIDOS:", novaLista);
-
-      setAlertasResolvidos(novaLista);
-    } catch {
-      Alert.alert("Erro", "Não foi possível marcar o alerta como resolvido.");
-    }
+  async function refresh() {
+    await Promise.all([refetchPets(), ...queries.map((query) => query.refetch())]);
   }
 
-  async function limparAlertasResolvidos() {
-    if (!petSelecionadoId) return;
-
-    Alert.alert(
-      "Restaurar alertas",
-      "Deseja exibir novamente os alertas resolvidos deste pet?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Restaurar",
-          onPress: async () => {
-            const novaLista = alertasResolvidos.filter(
-              (id) => !id.startsWith(`${petSelecionadoId}-`),
-            );
-
-            await AsyncStorage.setItem(
-              ALERTAS_RESOLVIDOS_KEY,
-              JSON.stringify(novaLista),
-            );
-            
-            console.log("ALERTAS IA RESTAURADOS PARA O PET:", petSelecionadoId);
-
-            setAlertasResolvidos(novaLista);
-          },
-        },
-      ],
-    );
+  function ask(text = question) {
+    if (!text.trim() || !analysis || !careData) return;
+    setQuestion(text);
+    setAnswer(answerCareQuestion(text, analysis, careData));
   }
 
-  return (
-    <>
-      <StatusBar barStyle="dark-content" backgroundColor="#F6FBFA" />
+  function openInsightAction(insight: CareInsight) {
+    const action = insight.action.toLocaleLowerCase("pt-BR");
+    navigation.navigate(action.includes("agenda") || action.includes("compromisso") ? "Agenda" : "Histórico");
+  }
 
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.header}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.pageTitle}>Alertas IA</Text>
-            <Text style={styles.pageSubtitle}>
-              Receba recomendações inteligentes com base no perfil, histórico e
-              cuidados do pet.
-            </Text>
+  if (isLoading) return <View style={styles.center}><ActivityIndicator size="large" color="#0F766E" /><Text style={styles.loadingText}>A Clyvo IA está analisando...</Text></View>;
+
+  return <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <StatusBar barStyle="light-content" backgroundColor="#092F2D" />
+    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => void refresh()} colors={["#0F766E"]} />} keyboardShouldPersistTaps="handled">
+      <LinearGradient colors={["#092F2D", "#0F766E", "#14B8A6"]} style={styles.hero}>
+        <View style={styles.heroGlowOne} /><View style={styles.heroGlowTwo} />
+        <View style={styles.heroTop}><View style={styles.aiBadge}><Ionicons name="sparkles" size={14} color="#99F6E4" /><Text style={styles.aiBadgeText}>IA EXPLICÁVEL</Text></View><View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>dados atuais</Text></View></View>
+        <Text style={styles.heroTitle}>Clyvo IA</Text><Text style={styles.heroSubtitle}>Um copiloto preventivo que transforma o histórico do seu pet em cuidados claros e priorizados.</Text>
+      </LinearGradient>
+
+      {!pets.length ? <View style={styles.emptyCard}><View style={styles.emptyIcon}><Ionicons name="sparkles-outline" size={40} color="#0F766E" /></View><Text style={styles.emptyTitle}>A IA precisa conhecer seu pet</Text><Text style={styles.emptyText}>Cadastre o primeiro animal para receber uma análise personalizada.</Text><TouchableOpacity style={styles.primaryButton} onPress={() => navigation.navigate("Cadastrar Pet")}><Text style={styles.primaryButtonText}>Cadastrar pet</Text></TouchableOpacity></View> : <>
+        <View style={styles.section}><Text style={styles.sectionLabel}>ANALISAR PET</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.petRow}>{pets.map((pet) => { const active = pet.id === selectedPetId; return <TouchableOpacity key={pet.id} style={[styles.petChip, active && styles.petChipActive]} onPress={() => setSelectedPetId(pet.id)}><View style={[styles.petAvatar, active && styles.petAvatarActive]}><Ionicons name="paw" size={17} color={active ? "#0F766E" : "#64748B"} /></View><View><Text style={[styles.petName, active && styles.petNameActive]}>{pet.name}</Text><Text style={styles.petSpecies}>{pet.speciesName}</Text></View></TouchableOpacity>; })}</ScrollView></View>
+
+        {analysis && <>
+          <View style={styles.scoreCard}>
+            <View style={[styles.scoreCircle, analysis.level === "ATENCAO" && styles.scoreCircleHigh, analysis.level === "ACOMPANHAR" && styles.scoreCircleMedium]}><Text style={styles.scoreValue}>{analysis.score}</Text><Text style={styles.scoreOf}>/100</Text></View>
+            <View style={styles.scoreContent}><View style={styles.scoreTop}><Text style={styles.scoreTitle}>Índice de organização</Text><View style={styles.explainBadge}><Ionicons name="bulb-outline" size={12} color="#7C3AED" /><Text style={styles.explainText}>explicável</Text></View></View><Text style={styles.scoreSummary}>{analysis.summary}</Text><Text style={styles.scoreFacts}>{analysis.factsAnalyzed} fatos do histórico analisados para {selectedPet?.name}</Text></View>
           </View>
 
-          <View style={styles.headerIcon}>
-            <MaterialCommunityIcons
-              name="robot-happy-outline"
-              size={28}
-              color="#00796B"
-            />
-          </View>
-        </View>
+          <View style={styles.safetyCard}><Ionicons name="shield-checkmark-outline" size={21} color="#0F766E" /><View style={styles.safetyText}><Text style={styles.safetyTitle}>Apoio preventivo, não diagnóstico</Text><Text style={styles.safetySubtitle}>Cada sugestão mostra quais dados foram considerados. Decisões clínicas continuam com o veterinário.</Text></View></View>
 
-        {pets.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <MaterialCommunityIcons
-              name="paw-outline"
-              size={46}
-              color="#00796B"
-            />
-            <Text style={styles.emptyTitle}>Nenhum pet cadastrado</Text>
-            <Text style={styles.emptyText}>
-              Cadastre um pet para a IA gerar alertas personalizados de saúde,
-              vacinação e rotina.
-            </Text>
+          <View style={styles.sectionHeader}><View><Text style={styles.sectionTitle}>Prioridades inteligentes</Text><Text style={styles.sectionSubtitle}>Ordenadas pelo que merece atenção primeiro</Text></View><View style={styles.insightCount}><Text style={styles.insightCountText}>{analysis.insights.length}</Text></View></View>
 
-            <TouchableOpacity
-              style={styles.emptyButton}
-              onPress={() => navigation.navigate("Cadastrar Pet")}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.emptyButtonText}>Cadastrar pet</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            <View style={styles.aiHeroCard}>
-              <View style={styles.aiHeroTop}>
-                <View style={styles.aiIconBox}>
-                  <MaterialCommunityIcons
-                    name="brain"
-                    size={30}
-                    color="#FFFFFF"
-                  />
-                </View>
+          <View style={styles.insights}>{analysis.insights.map((insight) => <InsightCard key={insight.id} insight={insight} expanded={expandedInsight === insight.id} onExpand={() => setExpandedInsight((current) => current === insight.id ? null : insight.id)} onAction={() => openInsightAction(insight)} />)}</View>
 
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.aiHeroLabel}>IA ClyvoCare</Text>
-                  <Text style={styles.aiHeroTitle}>
-                    Monitoramento inteligente
-                  </Text>
-                  <Text style={styles.aiHeroText}>
-                    A IA analisa dados do pet e sugere cuidados preventivos.
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.petTabs}
-            >
-              {pets.map((pet) => {
-                const ativo = petSelecionadoId === pet.id;
-
-                return (
-                  <TouchableOpacity
-                    key={pet.id}
-                    style={[styles.petTab, ativo && styles.petTabActive]}
-                    onPress={() => setPetSelecionadoId(pet.id)}
-                    activeOpacity={0.85}
-                  >
-                    <MaterialCommunityIcons
-                      name="paw"
-                      size={15}
-                      color={ativo ? "#FFFFFF" : "#00796B"}
-                    />
-                    <Text
-                      style={[
-                        styles.petTabText,
-                        ativo && styles.petTabTextActive,
-                      ]}
-                    >
-                      {pet.nome}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <View style={styles.petCard}>
-              <View style={styles.petIcon}>
-                <MaterialCommunityIcons
-                  name={getIconePet(petSelecionado?.especieId)}
-                  size={30}
-                  color="#00796B"
-                />
-              </View>
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.petLabel}>Análise de</Text>
-                <Text style={styles.petName}>
-                  {petSelecionado?.nome || "Pet"}
-                </Text>
-                <Text style={styles.petSub}>
-                  {petSelecionado?.raca ||
-                    petSelecionado?.especie ||
-                    "Dados não informados"}
-                </Text>
-              </View>
-
-              <View style={styles.petStatusBadge}>
-                <Text style={styles.petStatusText}>
-                  {alertasAtivos.length === 1
-                    ? "1 alerta"
-                    : `${alertasAtivos.length} alertas`}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.summaryGrid}>
-              <RiskCard label="Alto" value={totalAlto} nivel="alto" />
-              <RiskCard label="Médio" value={totalMedio} nivel="medio" />
-              <RiskCard label="Baixo" value={totalBaixo} nivel="baixo" />
-            </View>
-
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionTitle}>Alertas ativos</Text>
-                <Text style={styles.sectionSubtitle}>
-                  Recomendações geradas para {petSelecionado?.nome || "o pet"}
-                </Text>
-              </View>
-
-              {alertasResolvidos.length > 0 && (
-                <TouchableOpacity onPress={limparAlertasResolvidos}>
-                  <Text style={styles.restoreText}>Restaurar</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {alertasAtivos.length === 0 ? (
-              <View style={styles.noAlertsCard}>
-                <Ionicons name="checkmark-circle" size={42} color="#00796B" />
-                <Text style={styles.noAlertsTitle}>Tudo certo por aqui</Text>
-                <Text style={styles.noAlertsText}>
-                  Não encontramos alertas ativos para este pet no momento.
-                </Text>
-              </View>
-            ) : (
-              alertasAtivos.map((alerta) => (
-                <AlertaCard
-                  key={alerta.id}
-                  alerta={alerta}
-                  onResolver={() => resolverAlerta(alerta.id)}
-                />
-              ))
-            )}
-
-            {alertasResolvidosDoPet.length > 0 && (
-              <View style={styles.resolvedCard}>
-                <Text style={styles.resolvedTitle}>Alertas resolvidos</Text>
-
-                {alertasResolvidosDoPet.map((alerta) => (
-                  <View key={alerta.id} style={styles.resolvedItem}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={18}
-                      color="#00796B"
-                    />
-                    <Text style={styles.resolvedText}>{alerta.titulo}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </>
-        )}
-      </ScrollView>
-    </>
-  );
-}
-
-function gerarAlertasInteligentes(
-  pet: Pet,
-  historicoDoPet: HistoricoPet[],
-): AlertaIA[] {
-  const alertas: AlertaIA[] = [];
-
-  const petId = pet.id;
-  const nome = pet.nome || "Seu pet";
-  const observacoes = (pet.observacoes || "").toLowerCase();
-  const idade = Number(pet.idade || 0);
-  const vacinas = pet.vacinas || [];
-  const vacinasPendentes = vacinas.filter((vacina) => !vacina.emDia);
-
-  const consultas = historicoDoPet.filter((item) => item.tipo === "consulta");
-  const vacinasHistorico = historicoDoPet.filter(
-    (item) => item.tipo === "vacina",
-  );
-  const exames = historicoDoPet.filter((item) => item.tipo === "exame");
-
-  const ultimoRegistro =
-    historicoDoPet.length > 0
-      ? historicoDoPet[historicoDoPet.length - 1]
-      : null;
-
-  if (vacinasPendentes.length > 0) {
-    alertas.push({
-      id: `${petId}-vacinas-pendentes`,
-      petId,
-      titulo: "Vacinas pendentes",
-      descricao: `${nome} possui ${vacinasPendentes.length} vacina(s) marcada(s) como pendente(s). Verifique a carteirinha e atualize a proteção.`,
-      nivel: "alto",
-      categoria: "Vacinação",
-      icone: "needle",
-    });
-  }
-
-  if (pet.situacaoVacinal === "sem_carteirinha") {
-    alertas.push({
-      id: `${petId}-sem-carteirinha`,
-      petId,
-      titulo: "Carteirinha não cadastrada",
-      descricao:
-        "A IA identificou que a carteirinha de vacinação não está registrada. Isso pode dificultar o acompanhamento preventivo.",
-      nivel: "medio",
-      categoria: "Documentação",
-      icone: "file-document-alert-outline",
-    });
-  }
-
-  if (historicoDoPet.length === 0) {
-    alertas.push({
-      id: `${petId}-sem-historico`,
-      petId,
-      titulo: "Histórico ainda vazio",
-      descricao:
-        "Adicione consultas, exames, vacinas ou tratamentos para a IA acompanhar melhor a evolução da saúde do pet.",
-      nivel: "baixo",
-      categoria: "Histórico",
-      icone: "clipboard-text-outline",
-    });
-  }
-
-  if (consultas.length === 0) {
-    alertas.push({
-      id: `${petId}-sem-consulta`,
-      petId,
-      titulo: "Nenhuma consulta registrada",
-      descricao:
-        "Não há consultas salvas no histórico. Um check-up ajuda a prevenir problemas e manter os cuidados em dia.",
-      nivel: "medio",
-      categoria: "Consulta",
-      icone: "stethoscope",
-    });
-  }
-
-  if (exames.length === 0 && idade >= 7) {
-    alertas.push({
-      id: `${petId}-idoso-sem-exame`,
-      petId,
-      titulo: "Pet sênior sem exames",
-      descricao:
-        "Pets mais velhos precisam de acompanhamento preventivo. Considere registrar exames de rotina para acompanhar a saúde.",
-      nivel: "alto",
-      categoria: "Prevenção",
-      icone: "heart-pulse",
-    });
-  }
-
-  if (idade >= 8) {
-    alertas.push({
-      id: `${petId}-pet-senior`,
-      petId,
-      titulo: "Atenção para fase sênior",
-      descricao:
-        "Pela idade informada, a IA recomenda check-ups mais frequentes, atenção ao peso, mobilidade e comportamento.",
-      nivel: "medio",
-      categoria: "Fase de vida",
-      icone: "calendar-heart",
-    });
-  }
-
-  if (
-    observacoes.includes("alergia") ||
-    observacoes.includes("alérgico") ||
-    observacoes.includes("alergico")
-  ) {
-    alertas.push({
-      id: `${petId}-alergia`,
-      petId,
-      titulo: "Histórico de alergia",
-      descricao:
-        "Foi identificada menção a alergia nas observações. Evite mudanças bruscas de ração, medicamentos sem orientação e produtos desconhecidos.",
-      nivel: "medio",
-      categoria: "Alergia",
-      icone: "alert-circle-outline",
-    });
-  }
-
-  if (
-    observacoes.includes("diabetes") ||
-    observacoes.includes("renal") ||
-    observacoes.includes("cardiaco") ||
-    observacoes.includes("cardíaco") ||
-    observacoes.includes("convuls")
-  ) {
-    alertas.push({
-      id: `${petId}-condicao-clinica`,
-      petId,
-      titulo: "Condição clínica importante",
-      descricao:
-        "A IA encontrou uma condição sensível nas observações. Mantenha acompanhamento veterinário e registre tratamentos no histórico.",
-      nivel: "alto",
-      categoria: "Saúde",
-      icone: "medical-bag",
-    });
-  }
-
-  if (ultimoRegistro && ultimoRegistro.scoreSaude < 60) {
-    alertas.push({
-      id: `${petId}-score-baixo`,
-      petId,
-      titulo: "Evolução de saúde em atenção",
-      descricao:
-        "O último registro de saúde ficou abaixo de 60%. Acompanhe sinais clínicos e considere uma avaliação veterinária.",
-      nivel: "alto",
-      categoria: "Evolução",
-      icone: "chart-line",
-    });
-  }
-
-  if (historicoDoPet.length >= 2) {
-    const ultimos = historicoDoPet.slice(-2);
-    const anterior = ultimos[0].scoreSaude;
-    const atual = ultimos[1].scoreSaude;
-
-    if (atual < anterior - 15) {
-      alertas.push({
-        id: `${petId}-queda-score`,
-        petId,
-        titulo: "Queda na saúde detectada",
-        descricao: `A pontuação de saúde caiu de ${anterior}% para ${atual}%. A IA recomenda observar comportamento, alimentação e sintomas.`,
-        nivel: "alto",
-        categoria: "Evolução",
-        icone: "trending-down",
-      });
-    }
-  }
-
-  if (vacinasHistorico.length === 0 && vacinasPendentes.length === 0) {
-    alertas.push({
-      id: `${petId}-vacinas-nao-registradas`,
-      petId,
-      titulo: "Vacinas não registradas no histórico",
-      descricao:
-        "Mesmo que esteja tudo bem, registrar vacinas aplicadas ajuda a manter a linha do tempo de cuidados completa.",
-      nivel: "baixo",
-      categoria: "Organização",
-      icone: "shield-check-outline",
-    });
-  }
-
-  if (alertas.length === 0) {
-    alertas.push({
-      id: `${petId}-rotina-ok`,
-      petId,
-      titulo: "Rotina bem organizada",
-      descricao:
-        "A IA não identificou riscos importantes. Continue registrando consultas, vacinas e cuidados para manter o acompanhamento.",
-      nivel: "baixo",
-      categoria: "Rotina",
-      icone: "check-decagram-outline",
-    });
-  }
-
-  return alertas;
-}
-
-function AlertaCard({
-  alerta,
-  onResolver,
-}: {
-  alerta: AlertaIA;
-  onResolver: () => void;
-}) {
-  const cor = getNivelColor(alerta.nivel);
-  const bg = getNivelBg(alerta.nivel);
-
-  return (
-    <View style={[styles.alertCard, { borderColor: bg }]}>
-      <View style={styles.alertTop}>
-        <View style={[styles.alertIcon, { backgroundColor: bg }]}>
-          <MaterialCommunityIcons name={alerta.icone} size={24} color={cor} />
-        </View>
-
-        <View style={{ flex: 1 }}>
-          <View style={styles.alertMetaRow}>
-            <Text style={[styles.alertLevel, { color: cor }]}>
-              {getNivelLabel(alerta.nivel)}
-            </Text>
-            <Text style={styles.alertCategory}>{alerta.categoria}</Text>
+          <View style={styles.assistantCard}>
+            <View style={styles.assistantHeader}><View style={styles.botAvatar}><Ionicons name="sparkles" size={23} color="#FFFFFF" /></View><View><Text style={styles.assistantTitle}>Pergunte à Clyvo</Text><Text style={styles.assistantSubtitle}>Respostas baseadas apenas nos dados de {selectedPet?.name}</Text></View></View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.questionsRow}>{QUICK_QUESTIONS.map((item) => <TouchableOpacity key={item} style={styles.questionChip} onPress={() => ask(item)}><Text style={styles.questionText}>{item}</Text></TouchableOpacity>)}</ScrollView>
+            {answer && <View style={styles.answerBox}><View style={styles.answerIcon}><Ionicons name="sparkles" size={16} color="#0F766E" /></View><Text style={styles.answerText}>{answer}</Text></View>}
+            <View style={styles.askRow}><TextInput style={styles.askInput} value={question} onChangeText={setQuestion} onSubmitEditing={() => ask()} placeholder="Pergunte sobre vacina, consulta..." placeholderTextColor="#94A3B8" returnKeyType="send" autoComplete="off" importantForAutofill="no" /><TouchableOpacity style={[styles.sendButton, !question.trim() && styles.sendDisabled]} onPress={() => ask()} disabled={!question.trim()}><Ionicons name="arrow-up" size={20} color="#FFFFFF" /></TouchableOpacity></View>
           </View>
 
-          <Text style={styles.alertTitle}>{alerta.titulo}</Text>
-        </View>
-      </View>
-
-      <Text style={styles.alertDescription}>{alerta.descricao}</Text>
-
-      <TouchableOpacity
-        style={[styles.resolveButton, { backgroundColor: cor }]}
-        onPress={onResolver}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
-        <Text style={styles.resolveButtonText}>Marcar como resolvido</Text>
-      </TouchableOpacity>
-    </View>
-  );
+          <View style={styles.methodCard}><View style={styles.methodTop}><Ionicons name="analytics-outline" size={20} color="#475569" /><Text style={styles.methodTitle}>Como esta análise foi criada?</Text></View><Text style={styles.methodText}>O protótipo combina cadastro, consultas, vacinas, exames, tratamentos, lembretes e informações fornecidas pelo tutor. As regras são auditáveis e não usam dados de outros usuários.</Text></View>
+        </>}
+      </>}
+    </ScrollView>
+  </KeyboardAvoidingView>;
 }
 
-function RiskCard({
-  label,
-  value,
-  nivel,
-}: {
-  label: string;
-  value: number;
-  nivel: NivelAlerta;
-}) {
-  const cor = getNivelColor(nivel);
-  const bg = getNivelBg(nivel);
-
-  return (
-    <View style={styles.riskCard}>
-      <View style={[styles.riskIcon, { backgroundColor: bg }]}>
-        <Ionicons name="alert-circle" size={20} color={cor} />
-      </View>
-
-      <Text style={styles.riskValue}>{value}</Text>
-      <Text style={styles.riskLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function getNivelLabel(nivel: NivelAlerta) {
-  if (nivel === "alto") return "Risco alto";
-  if (nivel === "medio") return "Risco médio";
-  return "Risco baixo";
-}
-
-function getNivelColor(nivel: NivelAlerta) {
-  if (nivel === "alto") return "#DC2626";
-  if (nivel === "medio") return "#D97706";
-  return "#00796B";
-}
-
-function getNivelBg(nivel: NivelAlerta) {
-  if (nivel === "alto") return "#FEE2E2";
-  if (nivel === "medio") return "#FEF3C7";
-  return "#E0F5F2";
-}
-
-function getIconePet(
-  especieId?: string,
-): keyof typeof MaterialCommunityIcons.glyphMap {
-  switch (especieId) {
-    case "cachorro":
-      return "dog";
-    case "gato":
-      return "cat";
-    case "coelho":
-      return "rabbit";
-    case "cobra":
-      return "snake";
-    case "ave":
-      return "bird";
-    case "peixe":
-      return "fish";
-    case "tartaruga":
-    case "jabuti":
-      return "turtle";
-    default:
-      return "paw";
-  }
+function InsightCard({ insight, expanded, onExpand, onAction }: { insight: CareInsight; expanded: boolean; onExpand: () => void; onAction: () => void }) {
+  const color = insight.priority === "HIGH" ? "#DC2626" : insight.priority === "MEDIUM" ? "#D97706" : "#0F766E";
+  const label = insight.priority === "HIGH" ? "Prioridade alta" : insight.priority === "MEDIUM" ? "Acompanhar" : "Preventivo";
+  return <View style={styles.insightCard}><View style={[styles.insightIcon, { backgroundColor: `${color}12` }]}><Ionicons name={insight.icon} size={23} color={color} /></View><View style={styles.insightBody}><View style={styles.insightTop}><View style={[styles.priorityPill, { backgroundColor: `${color}12` }]}><Text style={[styles.priorityText, { color }]}>{label}</Text></View><TouchableOpacity onPress={onExpand}><Ionicons name={expanded ? "chevron-up" : "information-circle-outline"} size={20} color="#64748B" /></TouchableOpacity></View><Text style={styles.insightTitle}>{insight.title}</Text><Text style={styles.insightMessage}>{insight.message}</Text>{expanded && <View style={styles.evidenceBox}><Text style={styles.evidenceLabel}>POR QUE A IA SUGERIU ISSO?</Text><Text style={styles.evidenceText}>{insight.evidence}</Text></View>}<TouchableOpacity style={styles.insightAction} onPress={onAction}><Text style={[styles.insightActionText, { color }]}>{insight.action}</Text><Ionicons name="arrow-forward" size={15} color={color} /></TouchableOpacity></View></View>;
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F6FBFA",
-  },
-
-  content: {
-    padding: 18,
-    paddingBottom: 120,
-  },
-
-  header: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 14,
-    marginTop: 16,
-    marginBottom: 22,
-  },
-
-  pageTitle: {
-    fontSize: 31,
-    fontWeight: "900",
-    color: "#00796B",
-    letterSpacing: -0.8,
-    lineHeight: 36,
-  },
-
-  pageSubtitle: {
-    marginTop: 8,
-    fontSize: 15,
-    color: "#64748B",
-    fontWeight: "800",
-    lineHeight: 23,
-  },
-
-  headerIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 22,
-    backgroundColor: "#E0F5F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  emptyCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 24,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-  },
-
-  emptyTitle: {
-    marginTop: 12,
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  emptyText: {
-    marginTop: 6,
-    fontSize: 13,
-    color: "#64748B",
-    fontWeight: "700",
-    textAlign: "center",
-    lineHeight: 20,
-  },
-
-  emptyButton: {
-    marginTop: 18,
-    backgroundColor: "#00796B",
-    paddingHorizontal: 20,
-    paddingVertical: 13,
-    borderRadius: 999,
-  },
-
-  emptyButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-    fontSize: 14,
-  },
-
-  aiHeroCard: {
-    backgroundColor: "#00796B",
-    borderRadius: 30,
-    padding: 20,
-    marginBottom: 14,
-    overflow: "hidden",
-  },
-
-  aiHeroTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-
-  aiIconBox: {
-    width: 58,
-    height: 58,
-    borderRadius: 21,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  aiHeroLabel: {
-    color: "#CCFBF1",
-    fontSize: 12,
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-
-  aiHeroTitle: {
-    marginTop: 2,
-    color: "#FFFFFF",
-    fontSize: 22,
-    fontWeight: "900",
-    letterSpacing: -0.5,
-  },
-
-  aiHeroText: {
-    marginTop: 4,
-    color: "#E0FFFA",
-    fontSize: 13,
-    fontWeight: "700",
-    lineHeight: 19,
-  },
-
-  petTabs: {
-    paddingVertical: 14,
-    gap: 10,
-  },
-
-  petTab: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 999,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-  },
-
-  petTabActive: {
-    backgroundColor: "#00796B",
-    borderColor: "#00796B",
-  },
-
-  petTabText: {
-    color: "#00796B",
-    fontSize: 14,
-    fontWeight: "900",
-    textTransform: "lowercase",
-  },
-
-  petTabTextActive: {
-    color: "#FFFFFF",
-  },
-
-  petCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 28,
-    padding: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-    marginBottom: 16,
-    shadowColor: "#00796B",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-
-  petIcon: {
-    width: 58,
-    height: 58,
-    borderRadius: 21,
-    backgroundColor: "#E0F5F2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  petLabel: {
-    fontSize: 11,
-    color: "#00796B",
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-
-  petName: {
-    marginTop: 1,
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#0F172A",
-    textTransform: "lowercase",
-  },
-
-  petSub: {
-    marginTop: 2,
-    fontSize: 13,
-    color: "#64748B",
-    fontWeight: "800",
-  },
-
-  petStatusBadge: {
-    backgroundColor: "#E0F5F2",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-  },
-
-  petStatusText: {
-    color: "#00796B",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-
-  summaryGrid: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 18,
-  },
-
-  riskCard: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-  },
-
-  riskIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 15,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-
-  riskValue: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  riskLabel: {
-    marginTop: 2,
-    fontSize: 11,
-    color: "#64748B",
-    fontWeight: "800",
-  },
-
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  sectionSubtitle: {
-    marginTop: 2,
-    fontSize: 12,
-    color: "#64748B",
-    fontWeight: "700",
-  },
-
-  restoreText: {
-    fontSize: 13,
-    color: "#00796B",
-    fontWeight: "900",
-  },
-
-  noAlertsCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 26,
-    padding: 24,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-  },
-
-  noAlertsTitle: {
-    marginTop: 10,
-    fontSize: 18,
-    color: "#0F172A",
-    fontWeight: "900",
-  },
-
-  noAlertsText: {
-    marginTop: 5,
-    fontSize: 13,
-    color: "#64748B",
-    fontWeight: "700",
-    textAlign: "center",
-    lineHeight: 20,
-  },
-
-  alertCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 26,
-    padding: 18,
-    borderWidth: 1.5,
-    marginBottom: 14,
-    shadowColor: "#00796B",
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-
-  alertTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-
-  alertIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  alertMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  alertLevel: {
-    fontSize: 11,
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-
-  alertCategory: {
-    fontSize: 11,
-    color: "#94A3B8",
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-
-  alertTitle: {
-    marginTop: 3,
-    fontSize: 17,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  alertDescription: {
-    marginTop: 12,
-    fontSize: 13,
-    color: "#64748B",
-    fontWeight: "700",
-    lineHeight: 20,
-  },
-
-  resolveButton: {
-    marginTop: 16,
-    borderRadius: 18,
-    paddingVertical: 13,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 7,
-  },
-
-  resolveButtonText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "900",
-  },
-
-  resolvedCard: {
-    marginTop: 4,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 26,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "#D9F3EF",
-  },
-
-  resolvedTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#0F172A",
-    marginBottom: 12,
-  },
-
-  resolvedItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingVertical: 8,
-  },
-
-  resolvedText: {
-    flex: 1,
-    color: "#64748B",
-    fontSize: 13,
-    fontWeight: "700",
-  },
+  container: { flex: 1, backgroundColor: "#F4F9F8" }, content: { paddingBottom: 44 }, center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F4F9F8" }, loadingText: { marginTop: 12, color: "#475569", fontWeight: "700" },
+  hero: { paddingTop: 52, paddingHorizontal: 20, paddingBottom: 30, borderBottomLeftRadius: 31, borderBottomRightRadius: 31, overflow: "hidden" }, heroGlowOne: { position: "absolute", width: 150, height: 150, borderRadius: 75, right: -45, top: -30, backgroundColor: "rgba(153,246,228,0.13)" }, heroGlowTwo: { position: "absolute", width: 90, height: 90, borderRadius: 45, right: 75, bottom: -45, backgroundColor: "rgba(255,255,255,0.08)" }, heroTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, aiBadge: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: 9, backgroundColor: "rgba(4,47,46,0.45)", flexDirection: "row", alignItems: "center", gap: 5 }, aiBadgeText: { color: "#CCFBF1", fontSize: 9, fontWeight: "900", letterSpacing: 1 }, liveBadge: { flexDirection: "row", alignItems: "center", gap: 5 }, liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#A7F3D0" }, liveText: { color: "#CCFBF1", fontSize: 9, fontWeight: "700" }, heroTitle: { marginTop: 18, color: "#FFFFFF", fontSize: 31, fontWeight: "900" }, heroSubtitle: { marginTop: 8, maxWidth: 315, color: "#CCFBF1", fontSize: 13, lineHeight: 20, fontWeight: "600" },
+  section: { marginTop: 20, paddingHorizontal: 18 }, sectionLabel: { marginBottom: 9, color: "#64748B", fontSize: 10, fontWeight: "900", letterSpacing: 1.3 }, petRow: { gap: 10, paddingRight: 12 }, petChip: { minWidth: 132, padding: 10, paddingRight: 15, borderRadius: 18, borderWidth: 1, borderColor: "#DCE9E7", backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", gap: 9 }, petChipActive: { borderColor: "#0F766E", backgroundColor: "#E6F7F4" }, petAvatar: { width: 35, height: 35, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#F1F5F4" }, petAvatarActive: { backgroundColor: "#FFFFFF" }, petName: { color: "#334155", fontSize: 14, fontWeight: "900" }, petNameActive: { color: "#0F766E" }, petSpecies: { marginTop: 1, color: "#94A3B8", fontSize: 10, fontWeight: "600" },
+  scoreCard: { marginHorizontal: 18, marginTop: 17, padding: 17, borderRadius: 23, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#DDEAE8", flexDirection: "row", alignItems: "center" }, scoreCircle: { width: 78, height: 78, borderRadius: 39, borderWidth: 7, borderColor: "#14B8A6", backgroundColor: "#ECFDF5", alignItems: "center", justifyContent: "center" }, scoreCircleMedium: { borderColor: "#F59E0B", backgroundColor: "#FFFBEB" }, scoreCircleHigh: { borderColor: "#EF4444", backgroundColor: "#FEF2F2" }, scoreValue: { color: "#0F172A", fontSize: 25, fontWeight: "900" }, scoreOf: { marginTop: -4, color: "#64748B", fontSize: 9, fontWeight: "800" }, scoreContent: { flex: 1, marginLeft: 15 }, scoreTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, scoreTitle: { color: "#0F172A", fontSize: 14, fontWeight: "900" }, explainBadge: { paddingHorizontal: 7, paddingVertical: 4, borderRadius: 8, backgroundColor: "#F3E8FF", flexDirection: "row", alignItems: "center", gap: 3 }, explainText: { color: "#7C3AED", fontSize: 8, fontWeight: "900" }, scoreSummary: { marginTop: 5, color: "#475569", fontSize: 11, lineHeight: 16 }, scoreFacts: { marginTop: 7, color: "#0F766E", fontSize: 9, fontWeight: "800" },
+  safetyCard: { marginHorizontal: 18, marginTop: 12, padding: 13, borderRadius: 17, backgroundColor: "#E9F8F5", flexDirection: "row", alignItems: "flex-start", gap: 9 }, safetyText: { flex: 1 }, safetyTitle: { color: "#134E4A", fontSize: 11, fontWeight: "900" }, safetySubtitle: { marginTop: 3, color: "#0F766E", fontSize: 9, lineHeight: 14 }, sectionHeader: { marginHorizontal: 18, marginTop: 23, marginBottom: 11, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, sectionTitle: { color: "#0F172A", fontSize: 18, fontWeight: "900" }, sectionSubtitle: { marginTop: 3, color: "#64748B", fontSize: 10 }, insightCount: { width: 31, height: 31, borderRadius: 11, alignItems: "center", justifyContent: "center", backgroundColor: "#DFF7F4" }, insightCountText: { color: "#0F766E", fontSize: 13, fontWeight: "900" }, insights: { paddingHorizontal: 18, gap: 11 },
+  insightCard: { padding: 15, borderRadius: 21, borderWidth: 1, borderColor: "#DEEAE8", backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "flex-start" }, insightIcon: { width: 44, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center" }, insightBody: { flex: 1, marginLeft: 12 }, insightTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, priorityPill: { paddingHorizontal: 7, paddingVertical: 4, borderRadius: 7 }, priorityText: { fontSize: 8, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.4 }, insightTitle: { marginTop: 8, color: "#0F172A", fontSize: 14, fontWeight: "900" }, insightMessage: { marginTop: 4, color: "#64748B", fontSize: 10, lineHeight: 16 }, evidenceBox: { marginTop: 9, padding: 9, borderRadius: 11, backgroundColor: "#F8FAFC" }, evidenceLabel: { color: "#7C3AED", fontSize: 7, fontWeight: "900", letterSpacing: 0.6 }, evidenceText: { marginTop: 4, color: "#475569", fontSize: 9, lineHeight: 14 }, insightAction: { marginTop: 10, flexDirection: "row", alignItems: "center", gap: 5 }, insightActionText: { fontSize: 10, fontWeight: "900" },
+  assistantCard: { marginHorizontal: 18, marginTop: 22, padding: 17, borderRadius: 24, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#DDEAE8" }, assistantHeader: { flexDirection: "row", alignItems: "center" }, botAvatar: { width: 46, height: 46, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: "#0F766E" }, assistantTitle: { marginLeft: 11, color: "#0F172A", fontSize: 16, fontWeight: "900" }, assistantSubtitle: { marginLeft: 11, marginTop: 2, color: "#64748B", fontSize: 9 }, questionsRow: { gap: 7, marginTop: 15, paddingRight: 8 }, questionChip: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 12, backgroundColor: "#EDF8F6" }, questionText: { color: "#0F766E", fontSize: 9, fontWeight: "800" }, answerBox: { marginTop: 13, padding: 12, borderRadius: 15, backgroundColor: "#F0FDFA", flexDirection: "row", alignItems: "flex-start", gap: 8 }, answerIcon: { width: 27, height: 27, borderRadius: 10, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF" }, answerText: { flex: 1, color: "#134E4A", fontSize: 11, lineHeight: 17 }, askRow: { marginTop: 13, minHeight: 48, paddingLeft: 13, paddingRight: 5, borderRadius: 16, borderWidth: 1, borderColor: "#DCE8E6", backgroundColor: "#F8FBFB", flexDirection: "row", alignItems: "center" }, askInput: { flex: 1, color: "#0F172A", fontSize: 11 }, sendButton: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#0F766E" }, sendDisabled: { opacity: 0.4 },
+  methodCard: { marginHorizontal: 18, marginTop: 13, padding: 15, borderRadius: 19, borderWidth: 1, borderColor: "#E2E8F0", backgroundColor: "#F8FAFC" }, methodTop: { flexDirection: "row", alignItems: "center", gap: 7 }, methodTitle: { color: "#334155", fontSize: 11, fontWeight: "900" }, methodText: { marginTop: 7, color: "#64748B", fontSize: 9, lineHeight: 15 },
+  emptyCard: { margin: 18, padding: 30, borderRadius: 25, borderWidth: 1, borderColor: "#DCEBE8", backgroundColor: "#FFFFFF", alignItems: "center" }, emptyIcon: { width: 80, height: 80, borderRadius: 28, backgroundColor: "#DFF7F4", alignItems: "center", justifyContent: "center" }, emptyTitle: { marginTop: 17, color: "#0F172A", fontSize: 18, fontWeight: "900", textAlign: "center" }, emptyText: { marginTop: 7, color: "#64748B", fontSize: 12, lineHeight: 19, textAlign: "center" }, primaryButton: { marginTop: 18, minHeight: 47, paddingHorizontal: 20, borderRadius: 15, backgroundColor: "#0F766E", alignItems: "center", justifyContent: "center" }, primaryButtonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900" },
 });

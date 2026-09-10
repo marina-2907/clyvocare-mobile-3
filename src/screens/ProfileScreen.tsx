@@ -1,10 +1,17 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 import {
+  useOwnerProfile,
+  useUpdateOwnerProfile,
+} from "../hooks/useOwnerProfile";
+import {
+  ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -14,19 +21,16 @@ import {
   View,
 } from "react-native";
 
-const PROFILE_KEY = "@clyvocare_perfil_usuario";
 const PLANO_KEY = "@clyvocare_plano_atual";
-const PETS_KEY = "@clyvocare_pets";
 
 type CicloPlano = "mensal" | "anual";
 
 type PerfilUsuario = {
   nome: string;
-  email: string;
   telefone: string;
+  documento: string;
   cidade: string;
-  estado: string;
-  clinica: string;
+  cadastradoEm: string;
 };
 
 type PlanoSalvo = {
@@ -58,8 +62,8 @@ const PLANOS: PlanoOpcao[] = [
     descricao: "Ideal para organizar vacinas, consultas e histórico do pet.",
   },
   {
-    id: "plus",
-    nome: "Plus",
+    id: "pro",
+    nome: "Pro",
     subtitulo: "Para cuidado inteligente",
     precoMensal: "R$ 59,90",
     precoAnual: "R$ 599,90",
@@ -79,11 +83,10 @@ const PLANOS: PlanoOpcao[] = [
 
 const perfilVazio: PerfilUsuario = {
   nome: "",
-  email: "",
   telefone: "",
+  documento: "",
   cidade: "",
-  estado: "",
-  clinica: "",
+  cadastradoEm: "",
 };
 
 function getPlanoId(planoAtual: PlanoSalvo | null) {
@@ -100,147 +103,123 @@ function getPlanoNome(planoAtual: PlanoSalvo | null) {
   );
 }
 
-export default function ProfileScreen({ navigation }: any) {
+export default function ProfileScreen({ navigation, route }: any) {
+  const { logout } = useAuth();
+  const {
+    data: ownerProfile,
+    isLoading: carregandoPerfil,
+    isError: erroPerfil,
+    refetch: recarregarPerfil,
+  } = useOwnerProfile();
+  const atualizarPerfil = useUpdateOwnerProfile();
+
   const [perfil, setPerfil] = useState<PerfilUsuario>(perfilVazio);
   const [perfilTemp, setPerfilTemp] = useState<PerfilUsuario>(perfilVazio);
 
   const [planoAtual, setPlanoAtual] = useState<PlanoSalvo | null>(null);
-  const [totalPets, setTotalPets] = useState(0);
-
   const [modalPerfilVisivel, setModalPerfilVisivel] = useState(false);
   const [modalPlanoVisivel, setModalPlanoVisivel] = useState(false);
   const [cicloPlano, setCicloPlano] = useState<CicloPlano>("mensal");
 
   const carregarDados = useCallback(async () => {
     try {
-      const perfilSalvo = await AsyncStorage.getItem(PROFILE_KEY);
       const planoSalvo = await AsyncStorage.getItem(PLANO_KEY);
-      const petsSalvos = await AsyncStorage.getItem(PETS_KEY);
-
-      console.log(
-        "PERFIL CARREGADO:",
-        perfilSalvo ? JSON.parse(perfilSalvo) : null,
-      );
-      console.log(
-        "PLANO CARREGADO:",
-        planoSalvo ? JSON.parse(planoSalvo) : null,
-      );
-      console.log(
-        "TOTAL DE PETS NO PERFIL:",
-        petsSalvos ? JSON.parse(petsSalvos).length : 0,
-      );
-
-      if (perfilSalvo) {
-        const perfilParseado = JSON.parse(perfilSalvo);
-        setPerfil(perfilParseado);
-        setPerfilTemp(perfilParseado);
-      } else {
-        setPerfil(perfilVazio);
-        setPerfilTemp(perfilVazio);
-      }
-
       if (planoSalvo) {
         setPlanoAtual(JSON.parse(planoSalvo));
       } else {
         setPlanoAtual(null);
       }
-
-      if (petsSalvos) {
-        const pets = JSON.parse(petsSalvos);
-        setTotalPets(Array.isArray(pets) ? pets.length : 0);
-      } else {
-        setTotalPets(0);
-      }
     } catch {
-      setPerfil(perfilVazio);
-      setPerfilTemp(perfilVazio);
       setPlanoAtual(null);
-      setTotalPets(0);
     }
   }, []);
 
+  useEffect(() => {
+    if (!ownerProfile) return;
+
+    const perfilDaApi: PerfilUsuario = {
+      nome: ownerProfile.name,
+      telefone: ownerProfile.phone,
+      documento: ownerProfile.document,
+      cidade: ownerProfile.cityName ?? "",
+      cadastradoEm: ownerProfile.registeredAt,
+    };
+
+    setPerfil(perfilDaApi);
+    setPerfilTemp(perfilDaApi);
+  }, [ownerProfile]);
+
   useFocusEffect(
     useCallback(() => {
-      carregarDados();
-    }, [carregarDados]),
+      void carregarDados();
+      void recarregarPerfil();
+
+      if (route?.params?.abrirPlanos) {
+        setModalPlanoVisivel(true);
+        navigation.setParams({ abrirPlanos: false });
+      }
+    }, [carregarDados, navigation, recarregarPerfil, route?.params?.abrirPlanos]),
   );
 
   const perfilCriado = perfil.nome.trim().length > 0;
+  const usuarioAutenticado = Boolean(ownerProfile);
 
+  async function abrirAutenticacao() {
+  try {
+    await logout();
+  } catch {
+    Alert.alert("Erro", "Não foi possível abrir a tela de login.");
+  }
+}
   function abrirModalPerfil() {
+    if (!usuarioAutenticado) {
+      abrirAutenticacao();
+      return;
+    }
+
     setPerfilTemp(perfil);
     setModalPerfilVisivel(true);
   }
 
   async function salvarPerfil() {
+    if (!usuarioAutenticado) {
+      abrirAutenticacao();
+      return;
+    }
+
     if (!perfilTemp.nome.trim()) {
       Alert.alert("Atenção", "Digite pelo menos o nome do tutor.");
       return;
     }
 
-    if (perfilTemp.email.trim() && !perfilTemp.email.includes("@")) {
-      Alert.alert("Atenção", "Digite um e-mail válido.");
+    if (!perfilTemp.telefone.trim()) {
+      Alert.alert("Atenção", "Digite o telefone do tutor.");
       return;
     }
 
     try {
+      const perfilAtualizado = await atualizarPerfil.mutateAsync({
+        name: perfilTemp.nome.trim(),
+        phone: perfilTemp.telefone.trim(),
+        cityId: null,
+      });
+
       const perfilFormatado: PerfilUsuario = {
-        nome: perfilTemp.nome.trim(),
-        email: perfilTemp.email.trim(),
-        telefone: perfilTemp.telefone.trim(),
-        cidade: perfilTemp.cidade.trim(),
-        estado: perfilTemp.estado.trim().toUpperCase(),
-        clinica: perfilTemp.clinica.trim(),
+        nome: perfilAtualizado.name,
+        telefone: perfilAtualizado.phone,
+        documento: perfilAtualizado.document,
+        cidade: perfilAtualizado.cityName ?? "",
+        cadastradoEm: perfilAtualizado.registeredAt,
       };
-
-      await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(perfilFormatado));
-
-      console.log("PERFIL DO TUTOR SALVO:", perfilFormatado);
 
       setPerfil(perfilFormatado);
       setPerfilTemp(perfilFormatado);
       setModalPerfilVisivel(false);
 
       Alert.alert("Perfil salvo", "Seu perfil foi atualizado com sucesso.");
-    } catch (erro) {
-      console.log("ERRO AO SALVAR PERFIL DO TUTOR:", erro);
+    } catch {
       Alert.alert("Erro", "Não foi possível salvar o perfil.");
     }
-  }
-  async function excluirPerfil() {
-    Alert.alert(
-      "Excluir perfil",
-      "Tem certeza que deseja excluir os dados do seu perfil? Essa ação não remove os pets cadastrados nem o plano ativo.",
-      [
-        {
-          text: "Cancelar",
-          style: "cancel",
-        },
-        {
-          text: "Excluir",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await AsyncStorage.removeItem(PROFILE_KEY);
-
-              console.log("PERFIL DO TUTOR EXCLUÍDO");
-
-              setPerfil(perfilVazio);
-              setPerfilTemp(perfilVazio);
-              setModalPerfilVisivel(false);
-
-              Alert.alert(
-                "Perfil excluído",
-                "Os dados do perfil foram removidos com sucesso.",
-              );
-            } catch (erro) {
-              console.log("ERRO AO EXCLUIR PERFIL DO TUTOR:", erro);
-              Alert.alert("Erro", "Não foi possível excluir o perfil.");
-            }
-          },
-        },
-      ],
-    );
   }
 
   async function alterarPlano(plano: PlanoOpcao) {
@@ -261,7 +240,6 @@ export default function ProfileScreen({ navigation }: any) {
 
     try {
       await AsyncStorage.setItem(PLANO_KEY, JSON.stringify(novoPlano));
-      console.log("PLANO SALVO NO PERFIL:", novoPlano);
       setPlanoAtual(novoPlano);
       setModalPlanoVisivel(false);
 
@@ -285,8 +263,6 @@ export default function ProfileScreen({ navigation }: any) {
         onPress: async () => {
           try {
             await AsyncStorage.removeItem(PLANO_KEY);
-
-            console.log("PLANO REMOVIDO DO PERFIL");
 
             setPlanoAtual(null);
             setModalPlanoVisivel(false);
@@ -312,6 +288,43 @@ export default function ProfileScreen({ navigation }: any) {
     return `${partes[0].charAt(0)}${partes[partes.length - 1].charAt(
       0,
     )}`.toUpperCase();
+  }
+
+  async function executarLogout() {
+    try {
+      await logout();
+    } catch {
+      Alert.alert("Erro", "Não foi possível encerrar sua sessão.");
+    }
+  }
+
+  function sairDaConta() {
+    if (Platform.OS === "web") {
+      void executarLogout();
+      return;
+    }
+
+    Alert.alert(
+      "Sair da conta",
+      "Deseja realmente encerrar sua sessão no ClyvoCare?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Sair",
+          style: "destructive",
+          onPress: () => void executarLogout(),
+        },
+      ],
+    );
+  }
+
+  if (carregandoPerfil) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0F766E" />
+        <Text style={styles.loadingText}>Carregando seu perfil...</Text>
+      </View>
+    );
   }
 
   return (
@@ -343,27 +356,74 @@ export default function ProfileScreen({ navigation }: any) {
           </View>
         </View>
 
+        {erroPerfil && !usuarioAutenticado && (
+          <View style={styles.visitorCard}>
+            <View style={styles.visitorIconBox}>
+              <Ionicons name="person-outline" size={25} color="#0F766E" />
+            </View>
+
+            <View style={styles.visitorTextBox}>
+              <Text style={styles.visitorTitle}>Você está como visitante</Text>
+              <Text style={styles.visitorText}>
+                Explore o ClyvoCare livremente. Entre para visualizar e editar
+                seus dados pessoais.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.visitorButton}
+              onPress={abrirAutenticacao}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.visitorButtonText}>Entrar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {erroPerfil && usuarioAutenticado && (
+          <View style={styles.connectionWarning}>
+            <Ionicons name="cloud-offline-outline" size={22} color="#B45309" />
+            <View style={styles.connectionWarningTextBox}>
+              <Text style={styles.connectionWarningTitle}>
+                Não foi possível atualizar agora
+              </Text>
+              <Text style={styles.connectionWarningText}>
+                Seus últimos dados continuam disponíveis.
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => void recarregarPerfil()}>
+              <Text style={styles.connectionRetryText}>Tentar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.profileCard}>
           <View style={styles.avatarCircle}>
             <Text style={styles.avatarText}>{getIniciais()}</Text>
           </View>
 
           <Text style={styles.name}>
-            {perfilCriado ? perfil.nome : "Criar perfil"}
+            {perfilCriado ? perfil.nome : "Visitante"}
           </Text>
 
           <Text style={styles.email}>
-            {perfil.email || "Adicione seu e-mail"}
+            {usuarioAutenticado
+              ? `CPF: ${perfil.documento || "Não informado"}`
+              : "Entre para acessar seus dados pessoais"}
           </Text>
 
           <TouchableOpacity
             style={styles.editProfileButton}
-            onPress={abrirModalPerfil}
+            onPress={usuarioAutenticado ? abrirModalPerfil : abrirAutenticacao}
             activeOpacity={0.9}
           >
-            <Ionicons name="create-outline" size={18} color="#FFFFFF" />
+            <Ionicons
+              name={usuarioAutenticado ? "create-outline" : "log-in-outline"}
+              size={18}
+              color="#FFFFFF"
+            />
             <Text style={styles.editProfileButtonText}>
-              {perfilCriado ? "Editar perfil" : "Criar perfil"}
+              {usuarioAutenticado ? "Editar perfil" : "Entrar ou criar conta"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -374,9 +434,11 @@ export default function ProfileScreen({ navigation }: any) {
               <Ionicons name="paw-outline" size={24} color="#0F766E" />
             </View>
 
-            <Text style={styles.resumeNumber}>{totalPets}</Text>
+            <Text style={styles.resumeNumber}>{ownerProfile?.petCount ?? 0}</Text>
             <Text style={styles.resumeLabel}>
-              {totalPets === 1 ? "pet cadastrado" : "pets cadastrados"}
+              {ownerProfile?.petCount === 1
+                ? "pet cadastrado"
+                : "pets cadastrados"}
             </Text>
           </View>
 
@@ -412,9 +474,9 @@ export default function ProfileScreen({ navigation }: any) {
           />
 
           <InfoRow
-            icon="mail-outline"
-            label="E-mail"
-            value={perfil.email || "Não informado"}
+            icon="document-text-outline"
+            label="Documento"
+            value={perfil.documento || "Não informado"}
           />
 
           <InfoRow
@@ -425,18 +487,14 @@ export default function ProfileScreen({ navigation }: any) {
 
           <InfoRow
             icon="location-outline"
-            label="Cidade/Estado"
-            value={
-              perfil.cidade || perfil.estado
-                ? `${perfil.cidade || "Cidade"} - ${perfil.estado || "UF"}`
-                : "Não informado"
-            }
+            label="Cidade"
+            value={perfil.cidade || "Não informada"}
           />
 
           <InfoRow
-            icon="medkit-outline"
-            label="Clínica vinculada"
-            value={perfil.clinica || "Nenhuma clínica vinculada"}
+            icon="calendar-outline"
+            label="Cadastro"
+            value={perfil.cadastradoEm || "Não informado"}
           />
         </View>
 
@@ -519,6 +577,29 @@ export default function ProfileScreen({ navigation }: any) {
             onPress={() => navigation?.navigate?.("IA")}
           />
         </View>
+
+        <TouchableOpacity
+          style={[
+            styles.logoutButton,
+            !usuarioAutenticado && styles.loginButton,
+          ]}
+          onPress={usuarioAutenticado ? sairDaConta : abrirAutenticacao}
+          activeOpacity={0.9}
+        >
+          <Ionicons
+            name={usuarioAutenticado ? "log-out-outline" : "log-in-outline"}
+            size={20}
+            color={usuarioAutenticado ? "#EF4444" : "#FFFFFF"}
+          />
+          <Text
+            style={[
+              styles.logoutButtonText,
+              !usuarioAutenticado && styles.loginButtonText,
+            ]}
+          >
+            {usuarioAutenticado ? "Sair da conta" : "Entrar ou criar uma conta"}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
 
       <Modal visible={modalPerfilVisivel} animationType="slide">
@@ -533,12 +614,8 @@ export default function ProfileScreen({ navigation }: any) {
             </TouchableOpacity>
 
             <View style={{ flex: 1 }}>
-              <Text style={styles.modalTitle}>
-                {perfilCriado ? "Editar perfil" : "Criar perfil"}
-              </Text>
-              <Text style={styles.modalSubtitle}>
-                Preencha os dados do tutor
-              </Text>
+              <Text style={styles.modalTitle}>Editar perfil</Text>
+              <Text style={styles.modalSubtitle}>Atualize os dados do tutor</Text>
             </View>
           </View>
 
@@ -558,17 +635,6 @@ export default function ProfileScreen({ navigation }: any) {
             />
 
             <InputField
-              label="E-mail"
-              placeholder="Ex: marina@email.com"
-              value={perfilTemp.email}
-              onChangeText={(text) =>
-                setPerfilTemp((prev) => ({ ...prev, email: text }))
-              }
-              icon="mail-outline"
-              keyboardType="email-address"
-            />
-
-            <InputField
               label="Telefone"
               placeholder="Ex: (11) 99999-9999"
               value={perfilTemp.telefone}
@@ -579,67 +645,24 @@ export default function ProfileScreen({ navigation }: any) {
               keyboardType="phone-pad"
             />
 
-            <View style={styles.inputRow}>
-              <View style={{ flex: 1 }}>
-                <InputField
-                  label="Cidade"
-                  placeholder="São Paulo"
-                  value={perfilTemp.cidade}
-                  onChangeText={(text) =>
-                    setPerfilTemp((prev) => ({ ...prev, cidade: text }))
-                  }
-                  icon="business-outline"
-                />
-              </View>
-
-              <View style={{ width: 96 }}>
-                <InputField
-                  label="Estado"
-                  placeholder="SP"
-                  value={perfilTemp.estado}
-                  onChangeText={(text) =>
-                    setPerfilTemp((prev) => ({
-                      ...prev,
-                      estado: text.toUpperCase(),
-                    }))
-                  }
-                  icon="map-outline"
-                  maxLength={2}
-                />
-              </View>
-            </View>
-
-            <InputField
-              label="Clínica vinculada"
-              placeholder="Ex: Clyvo Vet São Paulo"
-              value={perfilTemp.clinica}
-              onChangeText={(text) =>
-                setPerfilTemp((prev) => ({ ...prev, clinica: text }))
-              }
-              icon="medkit-outline"
-            />
-
             <TouchableOpacity
-              style={styles.saveButton}
+              style={[
+                styles.saveButton,
+                atualizarPerfil.isPending && styles.saveButtonDisabled,
+              ]}
               onPress={salvarPerfil}
+              disabled={atualizarPerfil.isPending}
               activeOpacity={0.9}
             >
-              <Ionicons name="save-outline" size={20} color="#FFFFFF" />
-              <Text style={styles.saveButtonText}>Salvar perfil</Text>
+              {atualizarPerfil.isPending ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="save-outline" size={20} color="#FFFFFF" />
+                  <Text style={styles.saveButtonText}>Salvar perfil</Text>
+                </>
+              )}
             </TouchableOpacity>
-
-            {perfilCriado && (
-              <TouchableOpacity
-                style={styles.deleteProfileButton}
-                onPress={excluirPerfil}
-                activeOpacity={0.9}
-              >
-                <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                <Text style={styles.deleteProfileButtonText}>
-                  Excluir perfil
-                </Text>
-              </TouchableOpacity>
-            )}
           </ScrollView>
         </View>
       </Modal>
@@ -734,7 +757,7 @@ export default function ProfileScreen({ navigation }: any) {
                         name={
                           plano.id === "premium"
                             ? "crown"
-                            : plano.id === "plus"
+                            : plano.id === "pro"
                               ? "heart-pulse"
                               : "paw-outline"
                         }
@@ -887,6 +910,140 @@ function InputField({
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 28,
+    backgroundColor: "#F6FBFA",
+  },
+
+  loadingText: {
+    marginTop: 12,
+    color: "#475569",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  errorTitle: {
+    marginTop: 14,
+    color: "#0F172A",
+    fontSize: 18,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  errorText: {
+    marginTop: 8,
+    color: "#64748B",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+
+  retryButton: {
+    marginTop: 18,
+    borderRadius: 16,
+    paddingHorizontal: 22,
+    paddingVertical: 13,
+    backgroundColor: "#0F766E",
+  },
+
+  retryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  visitorCard: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#99F6E4",
+    backgroundColor: "#ECFDF5",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  visitorIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#CCFBF1",
+  },
+
+  visitorTextBox: {
+    flex: 1,
+  },
+
+  visitorTitle: {
+    color: "#134E4A",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  visitorText: {
+    marginTop: 3,
+    color: "#47736F",
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "600",
+  },
+
+  visitorButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: "#0F766E",
+  },
+
+  visitorButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  connectionWarning: {
+    marginHorizontal: 18,
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+    backgroundColor: "#FFFBEB",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  connectionWarningTextBox: {
+    flex: 1,
+  },
+
+  connectionWarningTitle: {
+    color: "#92400E",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  connectionWarningText: {
+    marginTop: 2,
+    color: "#A16207",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+
+  connectionRetryText: {
+    color: "#92400E",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
   container: {
     flex: 1,
     backgroundColor: "#F6FBFA",
@@ -1388,6 +1545,10 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
 
+  saveButtonDisabled: {
+    opacity: 0.65,
+  },
+
   deleteProfileButton: {
     marginTop: 12,
     backgroundColor: "#FEE2E2",
@@ -1403,6 +1564,35 @@ const styles = StyleSheet.create({
     color: "#EF4444",
     fontSize: 14,
     fontWeight: "900",
+  },
+
+  logoutButton: {
+    marginHorizontal: 18,
+    marginTop: 18,
+    backgroundColor: "#FEE2E2",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    borderRadius: 20,
+    paddingVertical: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+
+  logoutButtonText: {
+    color: "#EF4444",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  loginButton: {
+    backgroundColor: "#0F766E",
+    borderColor: "#0F766E",
+  },
+
+  loginButtonText: {
+    color: "#FFFFFF",
   },
 
   cicloBox: {

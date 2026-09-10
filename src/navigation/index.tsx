@@ -1,15 +1,18 @@
-import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import { NavigationContainer } from "@react-navigation/native";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
+import { useAuth } from "../contexts/AuthContext";
+import AlertScreen from "../screens/AlertScreen";
 import HomeScreen from "../screens/HomeScreen";
+import LoginScreen from "../screens/LoginScreen";
 import PetListScreen from "../screens/PetListScreen";
 import PetRegisterScreen from "../screens/PetRegisterScreen";
-import TimelineScreen from "../screens/TimelineScreen";
-import AlertScreen from "../screens/AlertScreen";
-import ScheduleScreen from "../screens/ScheduleScreen";
 import ProfileScreen from "../screens/ProfileScreen";
+import RegisterScreen from "../screens/RegisterScreen";
+import ScheduleScreen from "../screens/ScheduleScreen";
+import TimelineScreen from "../screens/TimelineScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -25,9 +28,6 @@ function BottomTabs() {
           paddingTop: 10,
           backgroundColor: "#FFFFFF",
           borderTopWidth: 0,
-          shadowColor: "#000",
-          shadowOpacity: 0.06,
-          shadowRadius: 10,
           elevation: 10,
         },
         tabBarActiveTintColor: "#0F766E",
@@ -42,57 +42,64 @@ function BottomTabs() {
         name="Home"
         component={HomeScreen}
         options={{
-          title: "Home",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home-outline" size={size} color={color} />
           ),
         }}
       />
+
       <Tab.Screen
         name="Pets"
         component={PetListScreen}
         options={{
-          title: "Pets",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="paw-outline" size={size} color={color} />
           ),
         }}
       />
+
       <Tab.Screen
         name="Agenda"
         component={ScheduleScreen}
         options={{
-          title: "Agenda",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="calendar-outline" size={size} color={color} />
           ),
         }}
       />
+
       <Tab.Screen
         name="IA"
         component={AlertScreen}
         options={{
-          title: "IA",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="notifications-outline" size={size} color={color} />
+            <Ionicons
+              name="notifications-outline"
+              size={size}
+              color={color}
+            />
           ),
         }}
       />
+
       <Tab.Screen
         name="Histórico"
         component={TimelineScreen}
         options={{
-          title: "Histórico",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="document-text-outline" size={size} color={color} />
+            <Ionicons
+              name="document-text-outline"
+              size={size}
+              color={color}
+            />
           ),
         }}
       />
+
       <Tab.Screen
         name="Perfil"
         component={ProfileScreen}
         options={{
-          title: "Perfil",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),
@@ -102,26 +109,37 @@ function BottomTabs() {
   );
 }
 
+function AuthNavigator() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Cadastro" component={RegisterScreen} />
+    </Stack.Navigator>
+  );
+}
+
+function AppNavigator() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        contentStyle: {
+          backgroundColor: "#F6FBFA",
+        },
+      }}
+    >
+      <Stack.Screen name="Main" component={BottomTabs} />
+      <Stack.Screen name="Cadastrar Pet" component={PetRegisterScreen} />
+    </Stack.Navigator>
+  );
+}
+
 export default function Navigation() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <NavigationContainer>
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-          contentStyle: {
-            backgroundColor: "#F6FBFA",
-          },
-        }}
-      >
-        <Stack.Screen
-          name="Main"
-          component={BottomTabs}
-        />
-        <Stack.Screen
-          name="Cadastrar Pet"
-          component={PetRegisterScreen}
-        />
-      </Stack.Navigator>
+      {isAuthenticated ? <AppNavigator /> : <AuthNavigator />}
     </NavigationContainer>
   );
 }

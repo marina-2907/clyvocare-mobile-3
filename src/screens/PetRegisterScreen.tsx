@@ -1,2706 +1,1580 @@
-import React, { useState, useEffect } from "react";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import React, { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  Alert,
-  Image,
-  StatusBar,
-  Modal,
-  FlatList,
+  View,
 } from "react-native";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as ImagePicker from "expo-image-picker";
+import { useOwnerProfile } from "../hooks/useOwnerProfile";
+import {
+  useCreatePet,
+  useSpecies,
+  useUpdatePet,
+} from "../hooks/usePets";
+import {
+  Pet,
+  PetRequest,
+  PetSex,
+  PetSize,
+  Species,
+} from "../types/pet";
 
-const PETS_KEY = "@clyvocare_pets";
-
-type SituacaoVacinal =
-  | "com_carteirinha"
-  | "sem_carteirinha"
-  | "historico_desconhecido"
-  | "resgatado";
-
-type Castracao = "castrado" | "nao_castrado" | "nao_sei";
-
-type TipoDocumentacao =
-  | "origem_legal"
-  | "sanitaria_transporte"
-  | "origem_peixe"
-  | null;
-
-function permiteCastracaoDaEspecie(especieId?: string | null) {
-  return especieId === "cachorro" || especieId === "gato";
-}
-
-function usaSituacaoVacinalDaEspecie(especieId?: string | null) {
-  return !(
-    especieId === "hamster" ||
-    especieId === "porquinho" ||
-    especieId === "rato" ||
-    especieId === "chinchila" ||
-    especieId === "tartaruga" ||
-    especieId === "jabuti" ||
-    especieId === "cobra" ||
-    especieId === "lagarto" ||
-    especieId === "ave" ||
-    especieId === "peixe"
-  );
-}
-
-function getTipoDocumentacaoDaEspecie(
-  especieId?: string | null,
-): TipoDocumentacao {
-  if (
-    especieId === "tartaruga" ||
-    especieId === "jabuti" ||
-    especieId === "furao" ||
-    especieId === "ave" ||
-    especieId === "cobra" ||
-    especieId === "lagarto"
-  ) {
-    return "origem_legal";
-  }
-
-  if (
-    especieId === "porco" ||
-    especieId === "miniporco" ||
-    especieId === "vaca" ||
-    especieId === "minivaca" ||
-    especieId === "cabra"
-  ) {
-    return "sanitaria_transporte";
-  }
-
-  if (especieId === "peixe") {
-    return "origem_peixe";
-  }
-
-  return null;
-}
-
-function getInfoDocumentacao(especieId?: string | null) {
-  const tipo = getTipoDocumentacaoDaEspecie(especieId);
-
-  if (tipo === "origem_legal") {
-    return {
-      titulo: "Documentação de origem legal",
-      descricao:
-        "Este animal pode ter documentação de origem legal. Anexe nota fiscal, certificado de origem, autorização do criadouro ou documento equivalente, se houver.",
-      placeholder:
-        "Ex: número da nota fiscal, criadouro autorizado, certificado de origem, microchip, anilha, data de emissão ou qualquer informação importante para o veterinário...",
-    };
-  }
-
-  if (tipo === "sanitaria_transporte") {
-    return {
-      titulo: "Documentação sanitária ou de transporte",
-      descricao:
-        "Este animal pode ter documentação sanitária, de transporte ou de origem. Anexe GTA, nota fiscal, comprovante de origem ou documento veterinário, se houver.",
-      placeholder:
-        "Ex: GTA, nota fiscal, comprovante de origem, vacinação sanitária, exames, restrições de transporte ou observações do veterinário...",
-    };
-  }
-
-  if (tipo === "origem_peixe") {
-    return {
-      titulo: "Documentação, se aplicável",
-      descricao:
-        "Algumas espécies podem exigir comprovação de origem. Anexe nota fiscal, comprovante de compra ou documento do criador, se houver.",
-      placeholder:
-        "Ex: nota fiscal, loja/criadouro de origem, espécie, data da compra, cuidados específicos ou informações importantes para o veterinário...",
-    };
-  }
-
-  return null;
-}
-
-function normalizarPesoSalvo(
-  pesoSalvo?: string | null,
-  unidadeSalva?: "kg" | "g",
-) {
-  const valorOriginal = String(pesoSalvo || "")
-    .trim()
-    .toLowerCase();
-
-  let unidadeFinal: "kg" | "g" = unidadeSalva || "kg";
-
-  if (valorOriginal.endsWith("kg")) {
-    unidadeFinal = "kg";
-  } else if (valorOriginal.endsWith("g")) {
-    unidadeFinal = "g";
-  }
-
-  const pesoLimpo = valorOriginal.replace(/kg/g, "").replace(/g/g, "").trim();
-
-  return {
-    peso: pesoLimpo,
-    unidadePeso: unidadeFinal,
-  };
-}
-
-// Peso máximo razoável em kg por espécie
-const PESO_MAX_KG: Record<string, number> = {
-  cachorro: 120,
-  gato: 20,
-  coelho: 10,
-  hamster: 0.7,
-  porquinho: 2,
-  rato: 0.6,
-  chinchila: 0.9,
-  furao: 2.5,
-  ave: 2,
-  peixe: 5,
-  tartaruga: 30,
-  jabuti: 50,
-  cobra: 100,
-  lagarto: 25,
-  porco: 300,
-  miniporco: 30,
-  vaca: 1200,
-  minivaca: 400,
-  cabra: 120,
-};
-
-// Espécies tão pequenas que só faz sentido registrar em gramas
-const ESPECIE_SO_GRAMAS = ["hamster", "rato", "porquinho", "chinchila"];
-
-type Especie = {
-  id: string;
+type Option<T> = {
   label: string;
-  icone: string;
-  racas: string[];
-  vacinasPadrao: string[];
-  labelRaca?: string;
+  value: T;
 };
 
-const ESPECIES: Especie[] = [
-  {
-    id: "cachorro",
-    label: "Cachorro",
-    icone: "dog",
-    racas: [
-      "SRD (Vira-lata)",
-      "Golden Retriever",
-      "Labrador",
-      "Bulldog Francês",
-      "Poodle",
-      "Shih Tzu",
-      "Yorkshire",
-      "Husky Siberiano",
-      "Pastor Alemão",
-      "Beagle",
-      "Dachshund",
-      "Maltês",
-      "Pit Bull",
-      "Rottweiler",
-      "Border Collie",
-    ],
-    vacinasPadrao: [
-      "V10 / V8",
-      "Antirrábica",
-      "Vermífugo",
-      "Giardia",
-      "Gripe (Bordetella)",
-    ],
+type WeightUnit = "kg" | "g";
+
+type SpeciesMeta = {
+  icon: string;
+  color: string;
+  background: string;
+  subtitle: string;
+  breeds: string[];
+  defaultWeightUnit?: WeightUnit;
+};
+
+const SEX_OPTIONS: Option<PetSex>[] = [
+  { label: "Macho", value: "MALE" },
+  { label: "Fêmea", value: "FEMALE" },
+];
+
+const SIZE_OPTIONS: Option<PetSize>[] = [
+  { label: "Pequeno", value: "SMALL" },
+  { label: "Médio", value: "MEDIUM" },
+  { label: "Grande", value: "LARGE" },
+];
+
+const DEFAULT_SPECIES_META: SpeciesMeta = {
+  icon: "paw",
+  color: "#0F766E",
+  background: "#DFF7F4",
+  subtitle: "Animal de companhia",
+  breeds: ["SRD", "Outra"],
+};
+
+const DOG_BREEDS = [
+  "SRD (Vira-lata)",
+  "Golden Retriever",
+  "Labrador",
+  "Bulldog Francês",
+  "Poodle",
+  "Shih Tzu",
+  "Yorkshire",
+  "Husky Siberiano",
+  "Pastor Alemão",
+  "Beagle",
+  "Dachshund",
+  "Maltês",
+  "Pit Bull",
+  "Rottweiler",
+  "Border Collie",
+  "Outra",
+];
+
+const SPECIES_META: Record<string, SpeciesMeta> = {
+  cao: {
+    icon: "dog",
+    color: "#0F766E",
+    background: "#DFF7F4",
+    subtitle: "Cães de todos os portes",
+    breeds: DOG_BREEDS,
   },
-  {
-    id: "gato",
-    label: "Gato",
-    icone: "cat",
-    racas: [
+  cachorro: {
+    icon: "dog",
+    color: "#0F766E",
+    background: "#DFF7F4",
+    subtitle: "Cães de todos os portes",
+    breeds: DOG_BREEDS,
+  },
+  gato: {
+    icon: "cat",
+    color: "#7C3AED",
+    background: "#F3E8FF",
+    subtitle: "Felinos domésticos",
+    breeds: [
       "SRD (Vira-lata)",
       "Persa",
       "Siamês",
       "Maine Coon",
       "Ragdoll",
       "Bengal",
-      "Sphynx (Sem pelo)",
+      "Sphynx",
       "Scottish Fold",
       "Angorá",
       "Abissínio",
-    ],
-    vacinasPadrao: [
-      "Tríplice Felina (V3)",
-      "Antirrábica",
-      "Vermífugo",
-      "Leucemia Felina (FeLV)",
-      "Quádrupla Felina",
+      "Outra",
     ],
   },
-  {
-    id: "hamster",
-    label: "Hamster",
-    icone: "rodent",
-    racas: [
-      "Hamster Sírio",
-      "Hamster Anão Russo",
-      "Hamster Chinês",
-      "Hamster Roborovski",
-    ],
-    vacinasPadrao: ["Vermífugo", "Check-up semestral"],
+  hamster: {
+    icon: "rodent",
+    color: "#D97706",
+    background: "#FEF3C7",
+    subtitle: "Pequenos roedores",
+    breeds: ["Sírio", "Anão Russo", "Chinês", "Roborovski", "Outra"],
+    defaultWeightUnit: "g",
   },
-  {
-    id: "porquinho",
-    label: "Porquinho da Índia",
-    icone: "rodent",
-    racas: ["Americano", "Abissínio", "Peruano", "Teddy", "Rex", "Skinny"],
-    vacinasPadrao: ["Vermífugo", "Check-up semestral"],
+  "porquinho da india": {
+    icon: "rodent",
+    color: "#EA580C",
+    background: "#FFEDD5",
+    subtitle: "Porquinhos-da-índia",
+    breeds: ["Americano", "Abissínio", "Peruano", "Teddy", "Rex", "Skinny", "Outra"],
+    defaultWeightUnit: "g",
   },
-  {
-    id: "coelho",
-    label: "Coelho",
-    icone: "rabbit",
-    racas: [
-      "Mini Coelho",
-      "Angorá",
-      "Holland Lop",
-      "Rex",
-      "Lionhead",
-      "Netherland Dwarf",
-    ],
-    vacinasPadrao: ["Mixomatose", "Doença Hemorrágica Viral", "Vermífugo"],
+  coelho: {
+    icon: "rabbit",
+    color: "#DB2777",
+    background: "#FCE7F3",
+    subtitle: "Coelhos domésticos",
+    breeds: ["Mini Coelho", "Angorá", "Holland Lop", "Rex", "Lionhead", "Netherland Dwarf", "Outra"],
   },
-  {
-    id: "tartaruga",
-    label: "Tartaruga",
-    icone: "turtle",
-    racas: [
-      "Tigre d'água",
-      "Tartaruga-da-orelha-vermelha",
-      "Tartaruga-de-caixa",
-      "Tartaruga-pintada",
-    ],
-    vacinasPadrao: ["Check-up anual", "Vermífugo"],
+  tartaruga: {
+    icon: "turtle",
+    color: "#15803D",
+    background: "#DCFCE7",
+    subtitle: "Quelônios aquáticos",
+    breeds: ["Tigre-d'água", "Orelha-vermelha", "Tartaruga-de-caixa", "Tartaruga-pintada", "Outra"],
   },
-  {
-    id: "jabuti",
-    label: "Jabuti",
-    icone: "turtle",
-    racas: ["Jabuti-piranga", "Jabuti-tinga", "Jabuti-do-chaco"],
-    vacinasPadrao: ["Check-up anual", "Vermífugo", "Exame de sangue"],
+  jabuti: {
+    icon: "turtle",
+    color: "#4D7C0F",
+    background: "#ECFCCB",
+    subtitle: "Quelônios terrestres",
+    breeds: ["Jabuti-piranga", "Jabuti-tinga", "Jabuti-do-chaco", "Outra"],
   },
-  {
-    id: "furao",
-    label: "Furão",
-    icone: "paw",
-    racas: ["Furão-europeu", "Furão-doméstico", "Furão albino"],
-    vacinasPadrao: [
-      "Antirrábica",
-      "Cinomose",
-      "Vermífugo",
-      "Check-up semestral",
-    ],
+  furao: {
+    icon: "paw",
+    color: "#92400E",
+    background: "#FEF3C7",
+    subtitle: "Furões domésticos",
+    breeds: ["Europeu", "Doméstico", "Albino", "Outra"],
   },
-  {
-    id: "rato",
-    label: "Rato Twister",
-    icone: "rodent",
-    racas: ["Rato Twister padrão", "Rato Rex", "Rato Dumbo", "Rato Hairless"],
-    vacinasPadrao: ["Vermífugo", "Check-up semestral"],
+  "rato twister": {
+    icon: "rodent",
+    color: "#475569",
+    background: "#F1F5F9",
+    subtitle: "Ratos domésticos",
+    breeds: ["Padrão", "Rex", "Dumbo", "Hairless", "Outra"],
+    defaultWeightUnit: "g",
   },
-  {
-    id: "chinchila",
-    label: "Chinchila",
-    icone: "rodent",
-    racas: [
-      "Chinchila Padrão Cinza",
-      "Chinchila Branca",
-      "Chinchila Bege",
-      "Chinchila Preta",
-    ],
-    vacinasPadrao: ["Vermífugo", "Check-up semestral"],
+  chinchila: {
+    icon: "rodent",
+    color: "#64748B",
+    background: "#F1F5F9",
+    subtitle: "Chinchilas domésticas",
+    breeds: ["Padrão Cinza", "Branca", "Bege", "Preta", "Outra"],
+    defaultWeightUnit: "g",
   },
-  {
-    id: "ave",
-    label: "Ave",
-    icone: "bird",
-    racas: [
-      "Papagaio",
-      "Calopsita",
-      "Periquito Australiano",
-      "Canário",
-      "Agapornis",
-      "Cacatua",
-      "Arara",
-      "Maritaca",
-      "Manon",
-      "Rouxinol",
-    ],
-    vacinasPadrao: [
-      "Newcastle",
-      "Bouba Aviária",
-      "Vermífugo",
-      "Check-up semestral",
-    ],
-    labelRaca: "Qual ave?",
+  ave: {
+    icon: "bird",
+    color: "#0284C7",
+    background: "#E0F2FE",
+    subtitle: "Aves domésticas e exóticas",
+    breeds: ["Papagaio", "Calopsita", "Periquito", "Canário", "Agapornis", "Cacatua", "Arara", "Maritaca", "Outra"],
+    defaultWeightUnit: "g",
   },
-  {
-    id: "peixe",
-    label: "Peixe",
-    icone: "fish",
-    racas: [
-      "Betta",
-      "Goldfish",
-      "Kinguio",
-      "Guppy",
-      "Tetra Neon",
-      "Disco",
-      "Arowana",
-      "Oscar",
-      "Platy",
-      "Corydoras",
-    ],
-    vacinasPadrao: ["Tratamento preventivo de parasitas", "Check-up da água"],
-    labelRaca: "Qual peixe?",
+  peixe: {
+    icon: "fish",
+    color: "#0891B2",
+    background: "#CFFAFE",
+    subtitle: "Peixes ornamentais",
+    breeds: ["Betta", "Goldfish", "Kinguio", "Guppy", "Tetra Neon", "Disco", "Arowana", "Oscar", "Outra"],
+    defaultWeightUnit: "g",
   },
-  {
-    id: "porco",
-    label: "Porco",
-    icone: "pig",
-    racas: ["Porco doméstico", "Porco vietnamita", "Porco pot-belly"],
-    vacinasPadrao: [
-      "Febre Aftosa",
-      "Parvovirose Suína",
-      "Erisipela",
-      "Vermífugo",
-      "Check-up semestral",
-    ],
+  porco: {
+    icon: "pig",
+    color: "#DB2777",
+    background: "#FCE7F3",
+    subtitle: "Suínos domésticos",
+    breeds: ["Doméstico", "Vietnamita", "Pot-belly", "Outra"],
   },
-  {
-    id: "miniporco",
-    label: "Mini Porco",
-    icone: "pig",
-    racas: [
-      "Mini Pig Vietnamita",
-      "Mini Pig Juliana",
-      "Mini Pig KuneKune",
-      "Mini Pig Pot-belly",
-    ],
-    vacinasPadrao: [
-      "Febre Aftosa",
-      "Parvovirose Suína",
-      "Erisipela",
-      "Vermífugo",
-      "Check-up semestral",
-    ],
+  "mini porco": {
+    icon: "pig",
+    color: "#BE185D",
+    background: "#FCE7F3",
+    subtitle: "Mini pigs",
+    breeds: ["Vietnamita", "Juliana", "KuneKune", "Pot-belly", "Outra"],
   },
-  {
-    id: "vaca",
-    label: "Vaca",
-    icone: "cow",
-    racas: ["Nelore", "Gir", "Girolando", "Holstein", "Jersey", "Angus"],
-    vacinasPadrao: [
-      "Febre Aftosa",
-      "Brucelose",
-      "Raiva",
-      "Botulismo",
-      "Vermífugo",
-    ],
+  vaca: {
+    icon: "cow",
+    color: "#334155",
+    background: "#E2E8F0",
+    subtitle: "Bovinos",
+    breeds: ["Nelore", "Gir", "Girolando", "Holandesa", "Jersey", "Angus", "Outra"],
   },
-  {
-    id: "minivaca",
-    label: "Mini Vaca",
-    icone: "cow",
-    racas: ["Nelore", "Gir", "Girolando", "Holstein", "Jersey", "Angus"],
-    vacinasPadrao: [
-      "Febre Aftosa",
-      "Brucelose",
-      "Raiva",
-      "Botulismo",
-      "Vermífugo",
-      "Check-up semestral",
-    ],
+  "mini vaca": {
+    icon: "cow",
+    color: "#475569",
+    background: "#E2E8F0",
+    subtitle: "Bovinos de pequeno porte",
+    breeds: ["Nelore", "Gir", "Girolando", "Holandesa", "Jersey", "Angus", "Outra"],
   },
-  {
-    id: "cabra",
-    label: "Cabra",
-    icone: "sheep",
-    racas: ["Saanen", "Toggenburg", "Anglo-nubiana", "Boer", "Cabra SRD"],
-    vacinasPadrao: [
-      "Febre Aftosa",
-      "Carbúnculo Sintomático",
-      "Pneumonia",
-      "Vermífugo",
-    ],
+  cabra: {
+    icon: "sheep",
+    color: "#7C2D12",
+    background: "#FFEDD5",
+    subtitle: "Caprinos",
+    breeds: ["Saanen", "Toggenburg", "Anglo-nubiana", "Boer", "SRD", "Outra"],
   },
-  {
-    id: "cobra",
-    label: "Cobra",
-    icone: "snake",
-    racas: [
-      "Jiboia",
-      "Cobra Milho",
-      "Píton da Índia",
-      "Píton Real",
-      "Falsa Coral",
-      "Cobra Rei",
-      "Cobra Nariz-de-porco",
-    ],
-    vacinasPadrao: ["Vermífugo", "Check-up semestral", "Exame de fezes"],
-    labelRaca: "Qual cobra?",
+  cobra: {
+    icon: "snake",
+    color: "#166534",
+    background: "#DCFCE7",
+    subtitle: "Serpentes legalizadas",
+    breeds: ["Jiboia", "Cobra Milho", "Píton Real", "Falsa Coral", "Cobra Rei", "Outra"],
   },
-  {
-    id: "lagarto",
-    label: "Lagarto",
-    icone: "bug",
-    racas: [
-      "Gecko-leopardo",
-      "Dragão-barbudo",
-      "Iguana-verde",
-      "Teiú",
-      "Gecko Tokay",
-      "Camaleão-velado",
-      "Monitor de Savana",
-    ],
-    vacinasPadrao: ["Vermífugo", "Check-up semestral", "Exame de fezes"],
-    labelRaca: "Qual lagarto?",
+  lagarto: {
+    icon: "lizard",
+    color: "#65A30D",
+    background: "#ECFCCB",
+    subtitle: "Lagartos legalizados",
+    breeds: ["Gecko-leopardo", "Dragão-barbudo", "Iguana-verde", "Teiú", "Camaleão", "Outra"],
   },
-];
-
-type Vacina = {
-  nome: string;
-  emDia: boolean;
 };
 
-export type Pet = {
-  id: string;
-  nome: string;
-  especie: string;
-  especieId: string;
-  raca: string;
-  idade: string;
-  peso: string;
-  unidadePeso?: "kg" | "g";
-  foto: string | null;
-  carteiraVacina: string | null;
-  documentoAnimal?: string | null;
-  observacoesDocumento?: string;
-  situacaoVacinal: SituacaoVacinal;
-  castracao: Castracao;
-  observacoes: string;
-  vacinas: Vacina[];
-};
+function normalizeText(value?: string | null) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
 
-type ScoreParams = {
-  vacinas: Vacina[];
-  idade: string;
-  peso: string;
-  observacoes: string;
-  carteiraVacina: string | null;
-  documentoAnimal?: string | null;
-  observacoesDocumento?: string;
-  situacaoVacinal: SituacaoVacinal;
-  castracao: Castracao;
-  especieId?: string | null;
-};
+function getSpeciesMeta(name?: string | null) {
+  return SPECIES_META[normalizeText(name)] ?? DEFAULT_SPECIES_META;
+}
 
-export function calcularScoreSaude({
-  vacinas,
-  idade,
-  peso,
-  observacoes,
-  carteiraVacina,
-  situacaoVacinal,
-  castracao,
-  especieId,
-}: ScoreParams): number {
-  const totalVacinas = vacinas?.length || 0;
-  const vacinasEmDia = vacinas?.filter((v) => v.emDia).length || 0;
+function formatDateInput(value: string) {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
 
-  const pontosVacina =
-    totalVacinas > 0 ? Math.round((vacinasEmDia / totalVacinas) * 40) : 0;
-
-  const idadeNum = parseInt(idade || "0", 10);
-
-  let pontosIdade = 12;
-
-  if (!idadeNum) {
-    pontosIdade = 7;
-  } else if (idadeNum >= 12) {
-    pontosIdade = 6;
-  } else if (idadeNum >= 8) {
-    pontosIdade = 8;
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) {
+    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   }
 
-  const pontosPeso = peso.trim() ? 10 : 5;
-  const usaSituacaoVacinal = usaSituacaoVacinalDaEspecie(especieId);
-  const pontosCarteira = usaSituacaoVacinal ? (carteiraVacina ? 13 : 4) : 10;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
 
-  let penalidadeSituacao = 0;
+function formatApiDateForDisplay(value?: string | null) {
+  if (!value) return "";
 
-  if (usaSituacaoVacinal && situacaoVacinal === "sem_carteirinha") {
-    penalidadeSituacao = 7;
-  }
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return formatDateInput(value);
 
-  if (usaSituacaoVacinal && situacaoVacinal === "historico_desconhecido") {
-    penalidadeSituacao = 12;
-  }
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
 
-  if (usaSituacaoVacinal && situacaoVacinal === "resgatado") {
-    penalidadeSituacao = 15;
-  }
+function formatDisplayDateForApi(value: string) {
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
 
-  let penalidadeCastracao = 0;
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
 
-  if (permiteCastracaoDaEspecie(especieId) && castracao === "nao_sei") {
-    penalidadeCastracao = 4;
-  }
+function validateDate(value: string) {
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(value)) return false;
 
-  const textoObs = observacoes.toLowerCase();
+  const [day, month, year] = value.split("/").map(Number);
+  const parsedDate = new Date(year, month - 1, day);
 
-  const palavrasDeAtencao = [
-    "alergia",
-    "alérgico",
-    "alergico",
-    "convulsão",
-    "convulsao",
-    "diabetes",
-    "cardíaco",
-    "cardiaco",
-    "rim",
-    "renal",
-    "tumor",
-    "câncer",
-    "cancer",
-    "asma",
-    "epilepsia",
-    "doença",
-    "doenca",
-    "cirurgia",
-    "dor",
-    "tratamento",
-    "ferida",
-    "machucado",
-    "sarna",
-    "carrapato",
-    "pulga",
-  ];
-
-  const temHistoricoClinico = palavrasDeAtencao.some((palavra) =>
-    textoObs.includes(palavra),
+  return (
+    parsedDate.getFullYear() === year &&
+    parsedDate.getMonth() === month - 1 &&
+    parsedDate.getDate() === day &&
+    parsedDate <= new Date()
   );
-
-  const penalidadeHistorico = temHistoricoClinico ? 8 : 0;
-
-  const score =
-    35 +
-    pontosVacina +
-    pontosIdade +
-    pontosPeso +
-    pontosCarteira -
-    penalidadeSituacao -
-    penalidadeCastracao -
-    penalidadeHistorico;
-
-  return Math.max(20, Math.min(100, Math.round(score)));
 }
 
 export default function PetRegisterScreen({ navigation, route }: any) {
-  const petId = route?.params?.petId as string | undefined;
+  const pet = route?.params?.pet as Pet | undefined;
+  const editing = Boolean(pet);
+  const fadeAnimation = useRef(new Animated.Value(0)).current;
+  const slideAnimation = useRef(new Animated.Value(22)).current;
 
-  const [nome, setNome] = useState("");
-  const [especieSelecionada, setEspecieSelecionada] = useState<Especie | null>(
-    null,
+  const {
+    data: ownerProfile,
+    isLoading: ownerLoading,
+    isError: ownerError,
+    refetch: refetchOwner,
+  } = useOwnerProfile();
+
+  const {
+    data: species = [],
+    isLoading: speciesLoading,
+    isError: speciesError,
+    refetch: refetchSpecies,
+  } = useSpecies();
+
+  const createPet = useCreatePet(ownerProfile?.id ?? 0);
+  const updatePet = useUpdatePet(ownerProfile?.id ?? 0);
+
+  const [name, setName] = useState(pet?.name ?? "");
+  const [birthDate, setBirthDate] = useState(
+    formatApiDateForDisplay(pet?.birthDate),
   );
-  const [raca, setRaca] = useState("");
-  const [racaCustom, setRacaCustom] = useState("");
-  const [idade, setIdade] = useState("");
-  const [peso, setPeso] = useState("");
-  const [unidadePeso, setUnidadePeso] = useState<"kg" | "g">("kg");
-  const [carteiraVacina, setCarteiraVacina] = useState<string | null>(null);
-  const [documentoAnimal, setDocumentoAnimal] = useState<string | null>(null);
-  const [observacoesDocumento, setObservacoesDocumento] = useState("");
-  const [situacaoVacinal, setSituacaoVacinal] =
-    useState<SituacaoVacinal>("com_carteirinha");
-  const [castracao, setCastracao] = useState<Castracao>("nao_sei");
-  const [observacoes, setObservacoes] = useState("");
-  const [vacinas, setVacinas] = useState<Vacina[]>([]);
-  const [salvando, setSalvando] = useState(false);
-
-  const [modalEspecie, setModalEspecie] = useState(false);
-  const [modalRaca, setModalRaca] = useState(false);
-
-  const podeInformarCastracao = permiteCastracaoDaEspecie(
-    especieSelecionada?.id,
+  const [birthDateUnknown, setBirthDateUnknown] = useState(
+    Boolean(pet && !pet.birthDate),
   );
-  const usaSituacaoVacinal = usaSituacaoVacinalDaEspecie(
-    especieSelecionada?.id,
+  const [breed, setBreed] = useState(pet?.breed ?? "");
+  const [weight, setWeight] = useState(
+    pet?.currentWeight !== null && pet?.currentWeight !== undefined
+      ? String(pet.currentWeight)
+      : "",
   );
-  const documentacaoInfo = getInfoDocumentacao(especieSelecionada?.id);
-  const podeInformarDocumentacao = !!documentacaoInfo;
-  const soUsaGramas = ESPECIE_SO_GRAMAS.includes(especieSelecionada?.id || "");
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>("kg");
+  const [microchip, setMicrochip] = useState(pet?.microchip ?? "");
+  const [sex, setSex] = useState<PetSex | null>(pet?.sex ?? null);
+  const [size, setSize] = useState<PetSize | null>(pet?.size ?? null);
+  const [speciesId, setSpeciesId] = useState<number | null>(null);
+  const [speciesModalVisible, setSpeciesModalVisible] = useState(false);
+  const [breedModalVisible, setBreedModalVisible] = useState(false);
+  const [speciesSearch, setSpeciesSearch] = useState("");
+  const [customBreed, setCustomBreed] = useState("");
 
-  const scoreFinal = calcularScoreSaude({
-    vacinas,
-    idade,
-    peso,
-    observacoes,
-    carteiraVacina,
-    situacaoVacinal,
-    castracao,
-    especieId: especieSelecionada?.id,
-  });
+  const selectedSpecies = useMemo(
+    () => species.find((item) => item.id === speciesId) ?? null,
+    [species, speciesId],
+  );
+  const selectedSpeciesMeta = getSpeciesMeta(selectedSpecies?.name);
 
-  const vacinasEmDia = vacinas.filter((v) => v.emDia).length;
-  const totalVacinas = vacinas.length;
+  const filteredSpecies = useMemo(() => {
+    const search = normalizeText(speciesSearch);
+    if (!search) return species;
+    return species.filter((item) => normalizeText(item.name).includes(search));
+  }, [species, speciesSearch]);
 
-  const scoreColor =
-    scoreFinal >= 85 ? "#0F766E" : scoreFinal >= 65 ? "#D97706" : "#EF4444";
+  const completedFields = [
+    name.trim(),
+    speciesId,
+    breed.trim(),
+    birthDateUnknown || birthDate.trim(),
+    sex,
+    size,
+    weight.trim(),
+  ].filter(Boolean).length;
 
-  const scoreBg =
-    scoreFinal >= 85 ? "#CCFBF1" : scoreFinal >= 65 ? "#FEF3C7" : "#FEE2E2";
-
-  const scoreLabel =
-    scoreFinal >= 85
-      ? "Muito saudável"
-      : scoreFinal >= 65
-        ? "Acompanhar"
-        : "Atenção";
-
-  const scoreDescricao =
-    scoreFinal >= 85
-      ? "O score é atualizado conforme você preenche os dados do pet."
-      : scoreFinal >= 65
-        ? "Complete peso, vacinas, documentos e histórico para melhorar a análise."
-        : "A IA recomenda revisar os dados e priorizar avaliação veterinária.";
+  const progress = Math.round((completedFields / 7) * 100);
+  const saving = createPet.isPending || updatePet.isPending;
+  const loading = ownerLoading || speciesLoading;
+  const loadingError = ownerError || speciesError;
 
   useEffect(() => {
-    async function loadPet() {
-      if (!petId) return;
+    Animated.parallel([
+      Animated.timing(fadeAnimation, {
+        toValue: 1,
+        duration: 450,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnimation, {
+        toValue: 0,
+        damping: 18,
+        stiffness: 125,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [fadeAnimation, slideAnimation]);
 
-      try {
-        const stored = await AsyncStorage.getItem(PETS_KEY);
-        const pets: any[] = stored ? JSON.parse(stored) : [];
-        const pet = pets.find((p) => p.id === petId);
-
-        if (pet) {
-          const pesoNormalizado = normalizarPesoSalvo(
-            pet.peso,
-            pet.unidadePeso,
-          );
-
-          setNome(pet.nome || "");
-          setEspecieSelecionada(
-            ESPECIES.find((e) => e.id === pet.especieId) || null,
-          );
-          setRaca(pet.raca || "");
-          setRacaCustom("");
-          setIdade(pet.idade || "");
-          setPeso(pesoNormalizado.peso);
-          setUnidadePeso(pesoNormalizado.unidadePeso);
-          setCarteiraVacina(pet.carteiraVacina || null);
-          setDocumentoAnimal(pet.documentoAnimal || null);
-          setObservacoesDocumento(pet.observacoesDocumento || "");
-          setSituacaoVacinal(pet.situacaoVacinal || "com_carteirinha");
-          setCastracao(pet.castracao || "nao_sei");
-          setObservacoes(pet.observacoes || "");
-          setVacinas(pet.vacinas || []);
-        }
-      } catch {
-        Alert.alert("Erro", "Não foi possível carregar os dados do pet.");
-      }
+  useEffect(() => {
+    if (species.length === 0 || speciesId !== null) return;
+    if (pet) {
+      const petSpecies = species.find(
+        (item) => normalizeText(item.name) === normalizeText(pet.speciesName),
+      );
+      setSpeciesId(petSpecies?.id ?? species[0].id);
+      return;
     }
+    setSpeciesId(species[0].id);
+  }, [pet, species, speciesId]);
 
-    loadPet();
-  }, [petId]);
-
-  function selecionarEspecie(esp: Especie) {
-    setEspecieSelecionada(esp);
-    setRaca("");
-    setRacaCustom("");
-    setPeso("");
-    setVacinas(esp.vacinasPadrao.map((nome) => ({ nome, emDia: false })));
-
-    // Força gramas para animais muito pequenos
-    if (ESPECIE_SO_GRAMAS.includes(esp.id)) {
-      setUnidadePeso("g");
-    } else {
-      setUnidadePeso("kg");
+  function selectSpecies(item: Species) {
+    if (speciesId !== item.id) {
+      setBreed("");
+      setCustomBreed("");
+      setWeightUnit(getSpeciesMeta(item.name).defaultWeightUnit ?? "kg");
     }
-
-    if (!permiteCastracaoDaEspecie(esp.id)) {
-      setCastracao("nao_sei");
-    }
-
-    if (!usaSituacaoVacinalDaEspecie(esp.id)) {
-      setSituacaoVacinal("com_carteirinha");
-      setCarteiraVacina(null);
-    }
-
-    if (!getTipoDocumentacaoDaEspecie(esp.id)) {
-      setDocumentoAnimal(null);
-      setObservacoesDocumento("");
-    }
-
-    setModalEspecie(false);
+    setSpeciesId(item.id);
+    setSpeciesModalVisible(false);
+    setSpeciesSearch("");
   }
 
-  async function escolherCarteiraVacina() {
+  function selectBreed(value: string) {
+    if (value === "Outra") {
+      setCustomBreed(breed === "Outra" ? "" : breed);
+      return;
+    }
+    setBreed(value);
+    setCustomBreed("");
+    setBreedModalVisible(false);
+  }
+
+  function saveCustomBreed() {
+    const normalizedBreed = customBreed.trim();
+    if (!normalizedBreed) {
+      Alert.alert("Atenção", "Digite a raça ou identificação do pet.");
+      return;
+    }
+    setBreed(normalizedBreed);
+    setBreedModalVisible(false);
+  }
+
+  function validateForm() {
+    if (!name.trim()) {
+      Alert.alert("Nome obrigatório", "Digite o nome do pet.");
+      return false;
+    }
+    if (!speciesId) {
+      Alert.alert("Espécie obrigatória", "Selecione a espécie do pet.");
+      return false;
+    }
+    if (
+      !birthDateUnknown &&
+      birthDate.trim() &&
+      !validateDate(birthDate.trim())
+    ) {
+      Alert.alert(
+        "Data inválida",
+        "Informe uma data real, que não esteja no futuro, no formato DD/MM/AAAA.",
+      );
+      return false;
+    }
+    const parsedWeight = Number(weight.replace(",", "."));
+    if (weight.trim() && (Number.isNaN(parsedWeight) || parsedWeight < 0)) {
+      Alert.alert("Peso inválido", "Digite um peso válido.");
+      return false;
+    }
+    return true;
+  }
+
+  async function savePet() {
+    if (!validateForm() || !ownerProfile || !speciesId) return;
+
+    const typedWeight = weight.trim()
+      ? Number(weight.replace(",", "."))
+      : null;
+    const weightInKg =
+      typedWeight === null
+        ? null
+        : weightUnit === "g"
+          ? typedWeight / 1000
+          : typedWeight;
+
+    const data: PetRequest = {
+      name: name.trim(),
+      birthDate:
+        birthDateUnknown || !birthDate.trim()
+          ? null
+          : formatDisplayDateForApi(birthDate.trim()),
+      sex,
+      currentWeight: weightInKg,
+      microchip: microchip.trim() || null,
+      breed: breed.trim() || null,
+      size,
+      photoUrl: pet?.photoUrl ?? null,
+      ownerId: ownerProfile.id,
+      speciesId,
+    };
+
     try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (status !== "granted") {
-        Alert.alert(
-          "Permissão necessária",
-          "Precisamos de acesso à galeria para anexar a carteirinha de vacinação.",
-        );
-        return;
+      if (pet) {
+        await updatePet.mutateAsync({ petId: pet.id, data });
+      } else {
+        await createPet.mutateAsync(data);
       }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: false,
-        quality: 0.5,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-
-        if (asset.uri) {
-          setCarteiraVacina(asset.uri);
-        }
-      }
-    } catch {
-      Alert.alert("Erro", "Não foi possível selecionar a carteirinha.");
+      Alert.alert(
+        editing ? "Pet atualizado!" : "Pet cadastrado!",
+        editing
+          ? `As informações de ${data.name} foram atualizadas.`
+          : `${data.name} agora faz parte da família ClyvoCare.`,
+        [{ text: "Ver meus pets", onPress: () => navigation.goBack() }],
+      );
+    } catch (error) {
+      Alert.alert(
+        "Não foi possível salvar",
+        error instanceof Error
+          ? error.message
+          : "Ocorreu um erro ao salvar o pet.",
+      );
     }
   }
 
-  async function escolherDocumentoAnimal() {
-    try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-      if (status !== "granted") {
-        Alert.alert(
-          "Permissão necessária",
-          "Precisamos de acesso à galeria para anexar o documento do animal.",
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.5,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-
-        if (asset.uri) {
-          setDocumentoAnimal(asset.uri);
-        }
-      }
-    } catch {
-      Alert.alert("Erro", "Não foi possível selecionar o documento do animal.");
-    }
+  async function reloadForm() {
+    await Promise.all([refetchOwner(), refetchSpecies()]);
   }
 
-  function removerCarteira() {
-    Alert.alert(
-      "Remover carteirinha",
-      "Deseja remover a carteirinha de vacinação anexada?",
-      [
-        {
-          text: "Cancelar",
-          style: "cancel",
-        },
-        {
-          text: "Remover",
-          style: "destructive",
-          onPress: () => setCarteiraVacina(null),
-        },
-      ],
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <View style={styles.loadingIconBox}>
+          <MaterialCommunityIcons name="paw" size={38} color="#0F766E" />
+        </View>
+        <ActivityIndicator size="large" color="#0F766E" />
+        <Text style={styles.loadingTitle}>Preparando o cadastro</Text>
+        <Text style={styles.loadingText}>Buscando as espécies na API...</Text>
+      </View>
     );
   }
 
-  function removerDocumentoAnimal() {
-    Alert.alert(
-      "Remover documento",
-      "Deseja remover o documento anexado deste animal?",
-      [
-        {
-          text: "Cancelar",
-          style: "cancel",
-        },
-        {
-          text: "Remover",
-          style: "destructive",
-          onPress: () => setDocumentoAnimal(null),
-        },
-      ],
+  if (loadingError) {
+    return (
+      <View style={styles.centerContainer}>
+        <Ionicons name="cloud-offline-outline" size={50} color="#EF4444" />
+        <Text style={styles.errorTitle}>Não foi possível abrir o formulário</Text>
+        <Text style={styles.errorText}>
+          Confira se a API Java está funcionando na porta 8080.
+        </Text>
+        <TouchableOpacity style={styles.retryButton} onPress={() => void reloadForm()}>
+          <Ionicons name="refresh" size={19} color="#FFFFFF" />
+          <Text style={styles.retryButtonText}>Tentar novamente</Text>
+        </TouchableOpacity>
+      </View>
     );
-  }
-
-  function toggleVacina(index: number) {
-    const novasVacinas = [...vacinas];
-    novasVacinas[index].emDia = !novasVacinas[index].emDia;
-    setVacinas(novasVacinas);
-  }
-
-  async function salvar() {
-    if (salvando) return;
-
-    if (!nome.trim()) {
-      Alert.alert("Atenção", "Por favor, informe o nome do pet.");
-      return;
-    }
-
-    if (!especieSelecionada) {
-      Alert.alert("Atenção", "Por favor, selecione o tipo de animal.");
-      return;
-    }
-    if (!peso.trim()) {
-      Alert.alert(
-        "Atenção",
-        "Por favor, informe o peso do pet para calcular melhor o score de saúde.",
-      );
-      return;
-    }
-    const pesoLimpoValidacao = peso
-      .replace(/kg/gi, "")
-      .replace(/g/gi, "")
-      .trim();
-
-    const pesoNum = parseFloat(pesoLimpoValidacao.replace(",", "."));
-
-    if (isNaN(pesoNum) || pesoNum <= 0) {
-      Alert.alert(
-        "Peso inválido",
-        "Informe um peso maior que zero para continuar o cadastro.",
-      );
-      return;
-    }
-
-    const limiteKg = PESO_MAX_KG[especieSelecionada.id];
-    const pesoEmKg = unidadePeso === "g" ? pesoNum / 1000 : pesoNum;
-
-    if (limiteKg !== undefined && pesoEmKg > limiteKg) {
-      Alert.alert(
-        "Peso incomum",
-        `O peso informado (${pesoLimpoValidacao}${unidadePeso}) parece muito alto para um ${especieSelecionada.label}. Verifique se a unidade está correta.`,
-      );
-      return;
-    }
-
-    setSalvando(true);
-
-    try {
-      const stored = await AsyncStorage.getItem(PETS_KEY);
-
-      let pets: Pet[] = [];
-
-      if (stored) {
-        try {
-          pets = JSON.parse(stored);
-        } catch {
-          pets = [];
-        }
-      }
-
-      const racaFinal = racaCustom.trim() || raca;
-      const pesoLimpo = peso.replace(/kg/gi, "").replace(/g/gi, "").trim();
-
-      const novoPet: Pet = {
-        id: petId || Date.now().toString(),
-        nome: nome.trim(),
-        especie: especieSelecionada.label,
-        especieId: especieSelecionada.id,
-        raca: racaFinal,
-        idade: idade.trim(),
-        peso: pesoLimpo,
-        unidadePeso,
-        foto: null,
-        documentoAnimal: getTipoDocumentacaoDaEspecie(especieSelecionada.id)
-          ? documentoAnimal
-          : null,
-        observacoesDocumento: getTipoDocumentacaoDaEspecie(
-          especieSelecionada.id,
-        )
-          ? observacoesDocumento.trim()
-          : "",
-        situacaoVacinal: usaSituacaoVacinalDaEspecie(especieSelecionada.id)
-          ? situacaoVacinal
-          : "com_carteirinha",
-        carteiraVacina: usaSituacaoVacinalDaEspecie(especieSelecionada.id)
-          ? carteiraVacina
-          : null,
-        castracao: permiteCastracaoDaEspecie(especieSelecionada.id)
-          ? castracao
-          : "nao_sei",
-        observacoes: observacoes.trim(),
-        vacinas,
-      };
-
-      if (petId) {
-        pets = pets.map((p) => (p.id === petId ? novoPet : p));
-      } else {
-        pets.push(novoPet);
-      }
-
-      await AsyncStorage.setItem(PETS_KEY, JSON.stringify(pets));
-
-      console.log("PET SALVO COM SUCESSO:", novoPet);
-      console.log("TOTAL DE PETS:", pets.length);
-
-      setSalvando(false);
-
-      if (navigation.canGoBack()) {
-        navigation.goBack();
-      } else {
-        navigation.navigate("Home");
-      }
-    } catch (erro: any) {
-      setSalvando(false);
-      
-      console.log("ERRO AO SALVAR PET:", erro);
-
-      Alert.alert(
-        "Erro ao salvar",
-        erro?.message ||
-          "Não foi possível salvar o pet. Tente cadastrar sem foto e sem carteirinha primeiro.",
-      );
-    }
-  }
-
-  async function excluir() {
-    if (!petId) return;
-
-    Alert.alert("Excluir pet", `Tem certeza que quer remover ${nome}?`, [
-      {
-        text: "Cancelar",
-        style: "cancel",
-      },
-      {
-        text: "Excluir",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const stored = await AsyncStorage.getItem(PETS_KEY);
-
-            if (stored) {
-              let pets: any[] = JSON.parse(stored);
-              pets = pets.filter((p) => p.id !== petId);
-              await AsyncStorage.setItem(PETS_KEY, JSON.stringify(pets));
-            }
-
-            navigation.reset({
-              index: 0,
-              routes: [{ name: "Main" }],
-            });
-          } catch {
-            Alert.alert("Erro", "Não foi possível excluir o pet.");
-          }
-        },
-      },
-    ]);
-  }
-
-  function getSituacaoTitulo() {
-    if (situacaoVacinal === "com_carteirinha") return "Carteirinha disponível";
-    if (situacaoVacinal === "sem_carteirinha") return "Sem carteirinha";
-    if (situacaoVacinal === "historico_desconhecido")
-      return "Histórico desconhecido";
-    return "Pet resgatado";
-  }
-
-  function getCastracaoTitulo() {
-    if (castracao === "castrado") return "Castrado";
-    if (castracao === "nao_castrado") return "Não castrado";
-    return "Castração não informada";
-  }
-
-  function selecionarRaca(racaSelecionada: string) {
-    setRaca(racaSelecionada);
-    setRacaCustom("");
-    setModalRaca(false);
   }
 
   return (
-    <ScrollView
+    <KeyboardAvoidingView
       style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <StatusBar barStyle="dark-content" backgroundColor="#F6FBFA" />
+      <StatusBar barStyle="light-content" backgroundColor="#064E4A" />
 
-      <View style={styles.header}>
+      <LinearGradient
+        colors={["#064E4A", "#0F766E", "#14B8A6"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
+        <View style={styles.headerCircleOne} />
+        <View style={styles.headerCircleTwo} />
         <TouchableOpacity
-          style={styles.backBtn}
+          style={styles.backButton}
           onPress={() => navigation.goBack()}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
         >
-          <Ionicons name="arrow-back" size={20} color="#0F766E" />
+          <Ionicons name="arrow-back" size={22} color="#0F766E" />
         </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>
-          {petId ? "Editar Pet" : "Novo Pet"}
-        </Text>
-
-        {petId ? (
-          <TouchableOpacity
-            style={styles.deleteBtn}
-            onPress={excluir}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="trash-outline" size={19} color="#EF4444" />
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 42 }} />
-        )}
-      </View>
-
-      <View style={styles.heroCard}>
-        <View style={styles.fotoSection}>
-          <View style={styles.fotoWrap}>
-            <View style={styles.fotoPlaceholder}>
-              <MaterialCommunityIcons
-                name={
-                  especieSelecionada ? (especieSelecionada.icone as any) : "paw"
-                }
-                size={52}
-                color="#0F9D8E"
-              />
-            </View>
-          </View>
-
-          <Text style={styles.fotoTitle}>
-            {especieSelecionada ? especieSelecionada.label : "Ícone do pet"}
+        <View style={styles.headerContent}>
+          <Text style={styles.headerEyebrow}>
+            {editing ? "ATUALIZAÇÃO DE CADASTRO" : "NOVO MEMBRO DA FAMÍLIA"}
           </Text>
-
-          <Text style={styles.fotoHint}>
-            O ClyvoCare usa um ícone automático conforme o tipo de animal.
+          <Text style={styles.headerTitle}>
+            {editing ? "Editar pet" : "Cadastrar pet"}
+          </Text>
+          <Text style={styles.headerSubtitle}>
+            Um perfil completo ajuda a personalizar todos os cuidados.
           </Text>
         </View>
+      </LinearGradient>
 
-        <View style={styles.scorePreview}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.scoreTitle}>
-              Score inteligente em tempo real
-            </Text>
-            <Text style={styles.scoreSub}>{scoreDescricao}</Text>
-
-            <View style={styles.scoreDetails}>
-              <View style={styles.scoreMiniItem}>
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={14}
-                  color="#0F766E"
-                />
-                <Text style={styles.scoreMiniText}>
-                  {totalVacinas > 0
-                    ? `${vacinasEmDia}/${totalVacinas} cuidados em dia`
-                    : "Escolha a espécie para exibir os cuidados"}
-                </Text>
-              </View>
-
-              {usaSituacaoVacinal ? (
-                <View style={styles.scoreMiniItem}>
-                  <Ionicons
-                    name="document-attach-outline"
-                    size={14}
-                    color="#0F766E"
-                  />
-                  <Text style={styles.scoreMiniText}>
-                    {getSituacaoTitulo()}
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.scoreMiniItem}>
-                  <Ionicons name="medkit-outline" size={14} color="#0F766E" />
-                  <Text style={styles.scoreMiniText}>Cuidados preventivos</Text>
-                </View>
-              )}
-
-              {podeInformarCastracao && (
-                <View style={styles.scoreMiniItem}>
-                  <Ionicons name="heart-outline" size={14} color="#0F766E" />
-                  <Text style={styles.scoreMiniText}>
-                    {getCastracaoTitulo()}
-                  </Text>
-                </View>
-              )}
-
-              {podeInformarDocumentacao && documentacaoInfo && (
-                <View style={styles.scoreMiniItem}>
-                  <Ionicons
-                    name="folder-open-outline"
-                    size={14}
-                    color="#0F766E"
-                  />
-                  <Text style={styles.scoreMiniText}>
-                    {documentoAnimal
-                      ? "Documento anexado"
-                      : documentacaoInfo.titulo}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-
-          <View style={[styles.scoreBadge, { backgroundColor: scoreBg }]}>
-            <Text style={[styles.scoreNum, { color: scoreColor }]}>
-              {scoreFinal}%
-            </Text>
-            <Text style={[styles.scoreLabel, { color: scoreColor }]}>
-              {scoreLabel}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Informações básicas</Text>
-        <Text style={styles.sectionSub}>
-          Preencha os dados principais para montar o perfil de saúde do pet.
-        </Text>
-
-        <View style={styles.fieldWrap}>
-          <Text style={styles.label}>Nome do pet *</Text>
-
-          <View style={styles.inputWrap}>
-            <Ionicons
-              name="paw-outline"
-              size={18}
-              color="#0F766E"
-              style={styles.inputIcon}
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: Thor, Mia, Mel..."
-              placeholderTextColor="#CBD5E1"
-              value={nome}
-              onChangeText={setNome}
-            />
-          </View>
-        </View>
-
-        <View style={styles.fieldWrap}>
-          <Text style={styles.label}>Tipo de animal *</Text>
-
-          <TouchableOpacity
-            style={styles.selectorWrap}
-            onPress={() => setModalEspecie(true)}
-            activeOpacity={0.85}
-          >
-            <MaterialCommunityIcons
-              name={
-                especieSelecionada
-                  ? (especieSelecionada.icone as any)
-                  : "paw-outline"
-              }
-              size={19}
-              color="#0F766E"
-              style={styles.inputIcon}
-            />
-
-            <Text
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Animated.View
+          style={{
+            opacity: fadeAnimation,
+            transform: [{ translateY: slideAnimation }],
+          }}
+        >
+          <View style={styles.summaryCard}>
+            <View
               style={[
-                styles.selectorText,
-                !especieSelecionada && styles.selectorPlaceholder,
+                styles.summaryIcon,
+                { backgroundColor: selectedSpeciesMeta.background },
               ]}
             >
-              {especieSelecionada
-                ? especieSelecionada.label
-                : "Selecione o animal..."}
+              <MaterialCommunityIcons
+                name={selectedSpeciesMeta.icon as any}
+                size={38}
+                color={selectedSpeciesMeta.color}
+              />
+            </View>
+            <View style={styles.summaryContent}>
+              <Text style={styles.summaryLabel}>PERFIL DO PET</Text>
+              <Text style={styles.summaryName}>{name.trim() || "Seu novo pet"}</Text>
+              <Text style={styles.summaryDetails}>
+                {selectedSpecies?.name || "Selecione a espécie"}
+                {breed.trim() ? ` • ${breed.trim()}` : ""}
+              </Text>
+            </View>
+            <View style={styles.progressBadge}>
+              <Text style={styles.progressBadgeValue}>{progress}%</Text>
+              <Text style={styles.progressBadgeLabel}>completo</Text>
+            </View>
+          </View>
+
+          <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${progress}%` as `${number}%` },
+              ]}
+            />
+          </View>
+
+          <SectionCard
+            number="01"
+            icon="paw-outline"
+            title="Identificação"
+            subtitle="Como devemos chamar seu pet?"
+          >
+            <FormField
+              label="Nome do pet"
+              required
+              value={name}
+              onChangeText={setName}
+              placeholder="Ex: Luna"
+              icon="heart-outline"
+              maxLength={100}
+            />
+
+            <Text style={styles.fieldLabel}>
+              Espécie <Text style={styles.required}>*</Text>
             </Text>
-
-            <Ionicons name="chevron-down" size={19} color="#94A3B8" />
-          </TouchableOpacity>
-        </View>
-
-        {especieSelecionada && (
-          <View style={styles.fieldWrap}>
-            <Text style={styles.label}>
-              {especieSelecionada.labelRaca || "Raça"}
-            </Text>
-
             <TouchableOpacity
-              style={styles.selectorWrap}
-              onPress={() => setModalRaca(true)}
+              style={styles.selector}
+              onPress={() => setSpeciesModalVisible(true)}
               activeOpacity={0.85}
             >
-              <Ionicons
-                name="list-outline"
-                size={19}
-                color="#0F766E"
-                style={styles.inputIcon}
-              />
-
-              <Text
+              <View
                 style={[
-                  styles.selectorText,
-                  !raca && styles.selectorPlaceholder,
+                  styles.selectorIcon,
+                  { backgroundColor: selectedSpeciesMeta.background },
                 ]}
               >
-                {raca ||
-                  `Selecione ${
-                    especieSelecionada.labelRaca?.toLowerCase() || "a raça"
-                  }...`}
-              </Text>
+                <MaterialCommunityIcons
+                  name={selectedSpeciesMeta.icon as any}
+                  size={25}
+                  color={selectedSpeciesMeta.color}
+                />
+              </View>
+              <View style={styles.selectorContent}>
+                <Text
+                  style={[
+                    styles.selectorValue,
+                    !selectedSpecies && styles.selectorPlaceholder,
+                  ]}
+                >
+                  {selectedSpecies?.name || "Escolha uma espécie"}
+                </Text>
+                <Text style={styles.selectorHint}>
+                  {selectedSpecies
+                    ? selectedSpeciesMeta.subtitle
+                    : `${species.length} opções disponíveis pela API`}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={21} color="#94A3B8" />
+            </TouchableOpacity>
+          </SectionCard>
 
-              <Ionicons name="chevron-down" size={19} color="#94A3B8" />
+          <SectionCard
+            number="02"
+            icon="sparkles-outline"
+            title="Características"
+            subtitle="Conte um pouco mais sobre ele"
+          >
+            <Text style={styles.fieldLabel}>Raça ou identificação</Text>
+            <TouchableOpacity
+              style={styles.selector}
+              onPress={() => {
+                if (!selectedSpecies) {
+                  Alert.alert("Primeiro a espécie", "Selecione a espécie antes da raça.");
+                  return;
+                }
+                setBreedModalVisible(true);
+              }}
+              activeOpacity={0.85}
+            >
+              <View style={styles.selectorIconNeutral}>
+                <Ionicons name="ribbon-outline" size={23} color="#0F766E" />
+              </View>
+              <View style={styles.selectorContent}>
+                <Text
+                  style={[
+                    styles.selectorValue,
+                    !breed && styles.selectorPlaceholder,
+                  ]}
+                >
+                  {breed || "Selecionar raça"}
+                </Text>
+                <Text style={styles.selectorHint}>Escolha na lista ou digite outra</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={21} color="#94A3B8" />
             </TouchableOpacity>
 
-            <View style={[styles.inputWrap, { marginTop: 10 }]}>
-              <Ionicons
-                name="create-outline"
-                size={18}
-                color="#0F766E"
-                style={styles.inputIcon}
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Ou digite uma raça específica..."
-                placeholderTextColor="#CBD5E1"
-                value={racaCustom}
-                onChangeText={setRacaCustom}
-              />
+            <Text style={styles.fieldLabel}>Sexo</Text>
+            <View style={styles.twoColumns}>
+              {SEX_OPTIONS.map((option) => (
+                <OptionButton
+                  key={option.value}
+                  label={option.label}
+                  selected={sex === option.value}
+                  onPress={() => setSex(option.value)}
+                />
+              ))}
             </View>
-          </View>
-        )}
 
-        <View style={styles.row}>
-          <View style={[styles.fieldWrap, { flex: 1 }]}>
-            <Text style={styles.label}>Idade</Text>
+            <Text style={styles.fieldLabel}>Porte</Text>
+            <View style={styles.sizeSelector}>
+              {SIZE_OPTIONS.map((option) => {
+                const selected = size === option.value;
 
-            <View style={styles.inputWrap}>
-              <Ionicons
-                name="time-outline"
-                size={18}
-                color="#0F766E"
-                style={styles.inputIcon}
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Ex: 2"
-                placeholderTextColor="#CBD5E1"
-                value={idade}
-                onChangeText={(text) => {
-                  const idadeLimpa = text.replace(/[^0-9]/g, "");
-                  setIdade(idadeLimpa);
-                }}
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
-
-          <View style={[styles.fieldWrap, { flex: 1 }]}>
-            <Text style={styles.label}>Peso</Text>
-
-            <View style={styles.inputWrap}>
-              <MaterialCommunityIcons
-                name="weight-kilogram"
-                size={18}
-                color="#0F766E"
-                style={styles.inputIcon}
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder={unidadePeso === "kg" ? "Ex: 7" : "Ex: 300"}
-                placeholderTextColor="#CBD5E1"
-                value={peso}
-                onChangeText={(text) => {
-                  const pesoLimpo = text
-                    .replace(/kg/gi, "")
-                    .replace(/g/gi, "")
-                    .replace(/[^0-9.,]/g, "")
-                    .trim();
-
-                  setPeso(pesoLimpo);
-                }}
-                keyboardType="numeric"
-              />
-
-              <View style={styles.unidadePesoBox}>
-                <TouchableOpacity
-                  style={[
-                    styles.unidadePesoBtn,
-                    unidadePeso === "kg" && styles.unidadePesoBtnActive,
-                    soUsaGramas && styles.unidadePesoBtnDisabled,
-                  ]}
-                  onPress={() => {
-                    if (!soUsaGramas) setUnidadePeso("kg");
-                  }}
-                  activeOpacity={soUsaGramas ? 1 : 0.85}
-                >
-                  <Text
+                return (
+                  <TouchableOpacity
+                    key={option.value}
                     style={[
-                      styles.unidadePesoText,
-                      unidadePeso === "kg" && styles.unidadePesoTextActive,
-                      soUsaGramas && styles.unidadePesoTextDisabled,
+                      styles.sizeOption,
+                      selected && styles.sizeOptionSelected,
                     ]}
+                    onPress={() => setSize(option.value)}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
                   >
-                    kg
-                  </Text>
-                </TouchableOpacity>
+                    <Text
+                      style={[
+                        styles.sizeOptionText,
+                        selected && styles.sizeOptionTextSelected,
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={styles.sizeHelper}>
+              Toque para selecionar o porte aproximado do pet.
+            </Text>
+          </SectionCard>
 
+          <SectionCard
+            number="03"
+            icon="fitness-outline"
+            title="Saúde e medidas"
+            subtitle="Informações úteis para o acompanhamento"
+          >
+            <FormField
+              label="Data de nascimento"
+              value={birthDate}
+              onChangeText={(value) => setBirthDate(formatDateInput(value))}
+              placeholder={birthDateUnknown ? "Data não informada" : "DD/MM/AAAA"}
+              helper={
+                birthDateUnknown
+                  ? "Sem problema: você poderá atualizar essa informação depois."
+                  : "Exemplo: 10/05/2022. As barras aparecem automaticamente."
+              }
+              icon="calendar-outline"
+              keyboardType="number-pad"
+              maxLength={10}
+              editable={!birthDateUnknown}
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.unknownDateButton,
+                birthDateUnknown && styles.unknownDateButtonSelected,
+              ]}
+              onPress={() => {
+                const nextValue = !birthDateUnknown;
+                setBirthDateUnknown(nextValue);
+                if (nextValue) setBirthDate("");
+              }}
+              activeOpacity={0.85}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: birthDateUnknown }}
+            >
+              <View
+                style={[
+                  styles.unknownDateCheckbox,
+                  birthDateUnknown && styles.unknownDateCheckboxSelected,
+                ]}
+              >
+                {birthDateUnknown && (
+                  <Ionicons name="checkmark" size={15} color="#FFFFFF" />
+                )}
+              </View>
+              <View style={styles.unknownDateContent}>
+                <Text
+                  style={[
+                    styles.unknownDateTitle,
+                    birthDateUnknown && styles.unknownDateTitleSelected,
+                  ]}
+                >
+                  Não sei a data exata
+                </Text>
+                <Text style={styles.unknownDateText}>
+                  Ideal para pets resgatados ou adotados sem histórico.
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <Text style={styles.fieldLabel}>Peso atual</Text>
+            <View style={styles.weightRow}>
+              <View style={styles.weightInputBox}>
+                <Ionicons name="scale-outline" size={21} color="#0F766E" />
+                <TextInput
+                  style={styles.weightInput}
+                  value={weight}
+                  onChangeText={setWeight}
+                  placeholder={weightUnit === "kg" ? "Ex: 8,5" : "Ex: 350"}
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="decimal-pad"
+                  autoComplete="off"
+                  importantForAutofill="no"
+                  textContentType="none"
+                />
+              </View>
+              <View style={styles.unitSelector}>
+                {(["kg", "g"] as WeightUnit[]).map((unit) => (
+                  <TouchableOpacity
+                    key={unit}
+                    style={[
+                      styles.unitButton,
+                      weightUnit === unit && styles.unitButtonSelected,
+                    ]}
+                    onPress={() => setWeightUnit(unit)}
+                  >
+                    <Text
+                      style={[
+                        styles.unitButtonText,
+                        weightUnit === unit && styles.unitButtonTextSelected,
+                      ]}
+                    >
+                      {unit}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            <Text style={styles.fieldHelper}>
+              O peso é convertido para kg antes de ser enviado à API.
+            </Text>
+          </SectionCard>
+
+          <SectionCard
+            number="04"
+            icon="shield-checkmark-outline"
+            title="Identificação segura"
+            subtitle="Campo opcional para facilitar a localização"
+          >
+            <FormField
+              label="Número do microchip"
+              value={microchip}
+              onChangeText={setMicrochip}
+              placeholder="Opcional"
+              helper="Informe somente se o animal possuir microchip."
+              icon="hardware-chip-outline"
+              maxLength={80}
+            />
+            <View style={styles.apiNotice}>
+              <View style={styles.apiNoticeIcon}>
+                <Ionicons name="cloud-done-outline" size={22} color="#0F766E" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.apiNoticeTitle}>Cadastro integrado</Text>
+                <Text style={styles.apiNoticeText}>
+                  Os dados serão salvos na API ClyvoCare e vinculados ao tutor logado.
+                </Text>
+              </View>
+            </View>
+          </SectionCard>
+
+          <TouchableOpacity
+            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+            onPress={savePet}
+            disabled={saving}
+            activeOpacity={0.9}
+          >
+            <LinearGradient
+              colors={saving ? ["#94A3B8", "#64748B"] : ["#0F766E", "#14B8A6"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.saveButtonGradient}
+            >
+              {saving ? (
+                <>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={styles.saveButtonText}>Salvando na API...</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons
+                    name={editing ? "save-outline" : "checkmark-circle-outline"}
+                    size={23}
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.saveButtonText}>
+                    {editing ? "Salvar alterações" : "Finalizar cadastro"}
+                  </Text>
+                  <Ionicons name="arrow-forward" size={21} color="#FFFFFF" />
+                </>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+          <Text style={styles.footerText}>
+            Os campos com <Text style={styles.required}>*</Text> são obrigatórios.
+          </Text>
+        </Animated.View>
+      </ScrollView>
+
+      <Modal
+        visible={speciesModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setSpeciesModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setSpeciesModalVisible(false)}
+            >
+              <Ionicons name="close" size={23} color="#0F766E" />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>Escolha a espécie</Text>
+              <Text style={styles.modalSubtitle}>
+                Opções cadastradas na API ClyvoCare
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.searchBox}>
+            <Ionicons name="search" size={20} color="#64748B" />
+            <TextInput
+              style={styles.searchInput}
+              value={speciesSearch}
+              onChangeText={setSpeciesSearch}
+              placeholder="Pesquisar espécie..."
+              placeholderTextColor="#94A3B8"
+              autoCapitalize="none"
+              autoComplete="off"
+              importantForAutofill="no"
+              textContentType="none"
+            />
+            {speciesSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setSpeciesSearch("")}>
+                <Ionicons name="close-circle" size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <FlatList
+            data={filteredSpecies}
+            keyExtractor={(item) => String(item.id)}
+            numColumns={2}
+            columnWrapperStyle={styles.speciesRow}
+            contentContainerStyle={styles.speciesList}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.modalEmpty}>
+                <Ionicons name="search-outline" size={42} color="#94A3B8" />
+                <Text style={styles.modalEmptyTitle}>Nenhuma espécie encontrada</Text>
+              </View>
+            }
+            renderItem={({ item }) => {
+              const meta = getSpeciesMeta(item.name);
+              const selected = speciesId === item.id;
+              return (
                 <TouchableOpacity
                   style={[
-                    styles.unidadePesoBtn,
-                    unidadePeso === "g" && styles.unidadePesoBtnActive,
+                    styles.speciesCard,
+                    selected && styles.speciesCardSelected,
                   ]}
-                  onPress={() => setUnidadePeso("g")}
+                  onPress={() => selectSpecies(item)}
                   activeOpacity={0.85}
                 >
-                  <Text
+                  <View
                     style={[
-                      styles.unidadePesoText,
-                      unidadePeso === "g" && styles.unidadePesoTextActive,
+                      styles.speciesCardIcon,
+                      { backgroundColor: meta.background },
                     ]}
                   >
-                    g
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {soUsaGramas && (
-              <Text style={styles.pesoHint}>
-                Para esta espécie, o peso é registrado em gramas.
-              </Text>
-            )}
-          </View>
-        </View>
-      </View>
-
-      {podeInformarCastracao && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Castração</Text>
-          <Text style={styles.sectionSub}>
-            Informe se o pet já é castrado ou não
-          </Text>
-
-          <View style={styles.optionList}>
-            <TouchableOpacity
-              style={[
-                styles.optionCard,
-                castracao === "castrado" && styles.optionCardActive,
-              ]}
-              onPress={() => setCastracao("castrado")}
-              activeOpacity={0.85}
-            >
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={22}
-                color="#0F766E"
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>Sim, é castrado</Text>
-                <Text style={styles.optionText}>
-                  O app registra que o pet já passou pelo procedimento.
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.optionCard,
-                castracao === "nao_castrado" && styles.optionCardActive,
-              ]}
-              onPress={() => setCastracao("nao_castrado")}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="close-circle-outline" size={22} color="#D97706" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>Não é castrado</Text>
-                <Text style={styles.optionText}>
-                  A agenda pode sugerir avaliação veterinária sobre castração.
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.optionCard,
-                castracao === "nao_sei" && styles.optionCardActive,
-              ]}
-              onPress={() => setCastracao("nao_sei")}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="help-circle-outline" size={22} color="#EA580C" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.optionTitle}>Não sei informar</Text>
-                <Text style={styles.optionText}>
-                  Ideal para pets resgatados ou adotados sem histórico completo.
-                </Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {podeInformarDocumentacao && documentacaoInfo && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{documentacaoInfo.titulo}</Text>
-          <Text style={styles.sectionSub}>{documentacaoInfo.descricao}</Text>
-
-          <TouchableOpacity
-            style={[
-              styles.carteiraCard,
-              documentoAnimal && styles.carteiraCardActive,
-            ]}
-            onPress={escolherDocumentoAnimal}
-            activeOpacity={0.85}
-          >
-            {documentoAnimal ? (
-              <>
-                <Image
-                  source={{ uri: documentoAnimal }}
-                  style={styles.carteiraPreview}
-                />
-
-                <View style={styles.carteiraInfo}>
-                  <View style={styles.carteiraIconActive}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={22}
-                      color="#0F766E"
+                    <MaterialCommunityIcons
+                      name={meta.icon as any}
+                      size={34}
+                      color={meta.color}
                     />
                   </View>
-
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.carteiraTitle}>Documento anexado</Text>
-                    <Text style={styles.carteiraSub}>
-                      Toque para substituir a imagem do documento.
-                    </Text>
-                  </View>
-                </View>
-              </>
-            ) : (
-              <View style={styles.carteiraEmpty}>
-                <View style={styles.carteiraIcon}>
-                  <Ionicons
-                    name="folder-open-outline"
-                    size={28}
-                    color="#0F766E"
-                  />
-                </View>
-
-                <Text style={styles.carteiraTitle}>
-                  Anexar documento do animal
-                </Text>
-                <Text style={styles.carteiraSub}>
-                  Envie uma foto do documento, se o tutor possuir.
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {documentoAnimal && (
-            <TouchableOpacity
-              style={styles.removeCarteiraBtn}
-              onPress={removerDocumentoAnimal}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="trash-outline" size={16} color="#EF4444" />
-              <Text style={styles.removeCarteiraText}>Remover documento</Text>
-            </TouchableOpacity>
-          )}
-
-          <View style={[styles.textAreaWrap, { marginTop: 12 }]}>
-            <TextInput
-              style={styles.textArea}
-              placeholder={documentacaoInfo.placeholder}
-              placeholderTextColor="#CBD5E1"
-              value={observacoesDocumento}
-              onChangeText={setObservacoesDocumento}
-              multiline
-              textAlignVertical="top"
-            />
-          </View>
-        </View>
-      )}
-
-      {usaSituacaoVacinal && (
-        <>
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Situação vacinal</Text>
-            <Text style={styles.sectionSub}>
-              Informe o que você sabe sobre o histórico de vacinas do pet.
-            </Text>
-
-            <View style={styles.optionList}>
-              <TouchableOpacity
-                style={[
-                  styles.optionCard,
-                  situacaoVacinal === "com_carteirinha" &&
-                    styles.optionCardActive,
-                ]}
-                onPress={() => setSituacaoVacinal("com_carteirinha")}
-                activeOpacity={0.85}
-              >
-                <Ionicons
-                  name="document-attach-outline"
-                  size={22}
-                  color="#0F766E"
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.optionTitle}>Tenho a carteirinha</Text>
-                  <Text style={styles.optionText}>
-                    Ideal para anexar a foto e marcar as vacinas em dia.
+                  <Text style={styles.speciesCardName}>{item.name}</Text>
+                  <Text style={styles.speciesCardSubtitle} numberOfLines={2}>
+                    {meta.subtitle}
                   </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.optionCard,
-                  situacaoVacinal === "sem_carteirinha" &&
-                    styles.optionCardActive,
-                ]}
-                onPress={() => setSituacaoVacinal("sem_carteirinha")}
-                activeOpacity={0.85}
-              >
-                <Ionicons
-                  name="help-circle-outline"
-                  size={22}
-                  color="#D97706"
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.optionTitle}>
-                    Não tenho a carteirinha
-                  </Text>
-                  <Text style={styles.optionText}>
-                    O app recomenda avaliação para revisar ou reiniciar o
-                    protocolo.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.optionCard,
-                  situacaoVacinal === "historico_desconhecido" &&
-                    styles.optionCardActive,
-                ]}
-                onPress={() => setSituacaoVacinal("historico_desconhecido")}
-                activeOpacity={0.85}
-              >
-                <Ionicons
-                  name="alert-circle-outline"
-                  size={22}
-                  color="#EA580C"
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.optionTitle}>Não sei o histórico</Text>
-                  <Text style={styles.optionText}>
-                    Para pets sem informações anteriores de vacina.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.optionCard,
-                  situacaoVacinal === "resgatado" && styles.optionCardActive,
-                ]}
-                onPress={() => setSituacaoVacinal("resgatado")}
-                activeOpacity={0.85}
-              >
-                <Ionicons
-                  name="heart-circle-outline"
-                  size={22}
-                  color="#EF4444"
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.optionTitle}>
-                    Pet resgatado recentemente
-                  </Text>
-                  <Text style={styles.optionText}>
-                    Gera prioridade para consulta, exames, vermífugo e avaliação
-                    vacinal.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {situacaoVacinal === "resgatado" && (
-            <View style={styles.alertBox}>
-              <Ionicons name="alert-circle-outline" size={22} color="#B91C1C" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.alertTitle}>
-                  Atenção para pet resgatado
-                </Text>
-                <Text style={styles.alertText}>
-                  Como o histórico pode ser desconhecido, recomendamos consulta
-                  inicial, exame clínico, vermífugo e avaliação do protocolo de
-                  vacinação com um veterinário.
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {situacaoVacinal === "historico_desconhecido" && (
-            <View style={styles.warningBox}>
-              <Ionicons
-                name="information-circle-outline"
-                size={22}
-                color="#D97706"
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.warningTitle}>Histórico desconhecido</Text>
-                <Text style={styles.warningText}>
-                  O ClyvoCare vai tratar esse pet como prioridade de revisão,
-                  sugerindo conferência das vacinas e montagem de um novo
-                  calendário preventivo.
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {situacaoVacinal === "sem_carteirinha" && (
-            <View style={styles.infoSituationBox}>
-              <Ionicons
-                name="document-text-outline"
-                size={22}
-                color="#0F766E"
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.infoSituationTitle}>Sem carteirinha</Text>
-                <Text style={styles.infoSituationText}>
-                  Mesmo sem documento, o tutor pode registrar o que lembra e
-                  buscar orientação veterinária para criar um novo histórico
-                  seguro.
-                </Text>
-              </View>
-            </View>
-          )}
-        </>
-      )}
-
-      {vacinas.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            {usaSituacaoVacinal
-              ? "Vacinas e cuidados preventivos"
-              : "Cuidados preventivos"}
-          </Text>
-          <Text style={styles.sectionSub}>
-            {usaSituacaoVacinal
-              ? "Marque apenas os cuidados que você tem certeza que estão em dia."
-              : "Para esta espécie, o foco é check-up, exames, controle de parasitas, ambiente adequado e acompanhamento veterinário."}
-          </Text>
-
-          <View style={styles.vacinasList}>
-            {vacinas.map((vacina, index) => (
-              <TouchableOpacity
-                key={`${vacina.nome}-${index}`}
-                style={[
-                  styles.vacinaRow,
-                  vacina.emDia && styles.vacinaRowActive,
-                ]}
-                onPress={() => toggleVacina(index)}
-                activeOpacity={0.85}
-              >
-                <View
-                  style={[
-                    styles.vacinaCheck,
-                    vacina.emDia && styles.vacinaCheckActive,
-                  ]}
-                >
-                  {vacina.emDia && (
-                    <Ionicons name="checkmark" size={15} color="#fff" />
+                  {selected && (
+                    <View style={styles.selectedBadge}>
+                      <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                    </View>
                   )}
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      styles.vacinaNome,
-                      vacina.emDia && styles.vacinaNomeActive,
-                    ]}
-                  >
-                    {vacina.nome}
-                  </Text>
-                  <Text style={styles.vacinaDesc}>
-                    {vacina.emDia
-                      ? "Registrado como cuidado em dia"
-                      : "Toque se este cuidado já foi realizado"}
-                  </Text>
-                </View>
-
-                <View
-                  style={[
-                    styles.vacinaStatus,
-                    {
-                      backgroundColor: vacina.emDia ? "#CCFBF1" : "#F1F5F9",
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.vacinaStatusText,
-                      {
-                        color: vacina.emDia ? "#0F766E" : "#94A3B8",
-                      },
-                    ]}
-                  >
-                    {vacina.emDia ? "Em dia" : "Pendente"}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {usaSituacaoVacinal && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Carteirinha de vacinação</Text>
-          <Text style={styles.sectionSub}>
-            Anexe uma foto da carteirinha, se tiver. Caso não tenha, o cadastro
-            continua normalmente.
-          </Text>
-
-          <TouchableOpacity
-            style={[
-              styles.carteiraCard,
-              carteiraVacina && styles.carteiraCardActive,
-            ]}
-            onPress={escolherCarteiraVacina}
-            activeOpacity={0.85}
-          >
-            {carteiraVacina ? (
-              <>
-                <Image
-                  source={{ uri: carteiraVacina }}
-                  style={styles.carteiraPreview}
-                />
-
-                <View style={styles.carteiraInfo}>
-                  <View style={styles.carteiraIconActive}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={22}
-                      color="#0F766E"
-                    />
-                  </View>
-
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.carteiraTitle}>
-                      Carteirinha anexada
-                    </Text>
-                    <Text style={styles.carteiraSub}>
-                      Toque para substituir a imagem salva.
-                    </Text>
-                  </View>
-                </View>
-              </>
-            ) : (
-              <View style={styles.carteiraEmpty}>
-                <View style={styles.carteiraIcon}>
-                  <Ionicons
-                    name="document-attach-outline"
-                    size={28}
-                    color="#0F766E"
-                  />
-                </View>
-
-                <Text style={styles.carteiraTitle}>Adicionar carteirinha</Text>
-                <Text style={styles.carteiraSub}>
-                  Envie uma foto da página de vacinas, reforços ou exames.
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {carteiraVacina && (
-            <TouchableOpacity
-              style={styles.removeCarteiraBtn}
-              onPress={removerCarteira}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="trash-outline" size={16} color="#EF4444" />
-              <Text style={styles.removeCarteiraText}>Remover carteirinha</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Histórico de saúde</Text>
-        <Text style={styles.sectionSub}>
-          Use este campo para registrar doenças anteriores, alergias, cirurgias,
-          tratamentos ou cuidados especiais.
-        </Text>
-
-        <View style={styles.textAreaWrap}>
-          <TextInput
-            style={styles.textArea}
-            placeholder="Ex: Foi resgatado na rua, estava com pulgas, tem alergia, já teve dermatite, usa remédio contínuo..."
-            placeholderTextColor="#CBD5E1"
-            value={observacoes}
-            onChangeText={setObservacoes}
-            multiline
-            textAlignVertical="top"
+                </TouchableOpacity>
+              );
+            }}
           />
         </View>
-      </View>
+      </Modal>
 
-      <View style={styles.infoCard}>
-        <View style={styles.infoIcon}>
-          <Ionicons name="sparkles-outline" size={22} color="#0F766E" />
-        </View>
-
-        <View style={{ flex: 1 }}>
-          <Text style={styles.infoTitle}>Como o score é calculado?</Text>
-          <Text style={styles.infoText}>
-            O ClyvoCare analisa os cuidados conforme a espécie: vacinas quando
-            fizer sentido, check-ups, documentação do animal, idade, peso e
-            possíveis alertas no histórico de saúde. Para cães e gatos, também
-            considera a castração. Pets resgatados ou sem histórico recebem
-            prioridade para revisão veterinária.
-          </Text>
-        </View>
-      </View>
-
-      <TouchableOpacity
-        style={[styles.saveBtn, salvando && styles.saveBtnDisabled]}
-        onPress={salvar}
-        activeOpacity={0.9}
-        disabled={salvando}
+      <Modal
+        visible={breedModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setBreedModalVisible(false)}
       >
-        <Ionicons name="checkmark-circle-outline" size={22} color="#fff" />
-
-        <Text style={styles.saveBtnText}>
-          {salvando
-            ? "Salvando..."
-            : petId
-              ? "Salvar alterações"
-              : "Cadastrar pet"}
-        </Text>
-      </TouchableOpacity>
-
-      <Modal visible={modalEspecie} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Tipo de animal</Text>
-
-              <TouchableOpacity onPress={() => setModalEspecie(false)}>
-                <Ionicons name="close" size={25} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              data={ESPECIES}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.modalItem,
-                    especieSelecionada?.id === item.id &&
-                      styles.modalItemActive,
-                  ]}
-                  onPress={() => selecionarEspecie(item)}
-                  activeOpacity={0.85}
-                >
-                  <MaterialCommunityIcons
-                    name={item.icone as any}
-                    size={24}
-                    color={
-                      especieSelecionada?.id === item.id ? "#0F766E" : "#64748B"
-                    }
-                  />
-
-                  <Text
-                    style={[
-                      styles.modalItemText,
-                      especieSelecionada?.id === item.id &&
-                        styles.modalItemTextActive,
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
-
-                  {especieSelecionada?.id === item.id && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={20}
-                      color="#0F766E"
-                    />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={modalRaca} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {especieSelecionada?.labelRaca || "Selecionar raça"}
+        <KeyboardAvoidingView
+          style={styles.modalContainer}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setBreedModalVisible(false)}
+            >
+              <Ionicons name="close" size={23} color="#0F766E" />
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>Raça ou identificação</Text>
+              <Text style={styles.modalSubtitle}>
+                Sugestões para {selectedSpecies?.name ?? "o pet"}
               </Text>
-
-              <TouchableOpacity onPress={() => setModalRaca(false)}>
-                <Ionicons name="close" size={25} color="#64748B" />
-              </TouchableOpacity>
             </View>
+          </View>
 
-            <FlatList
-              data={especieSelecionada?.racas || []}
-              keyExtractor={(item) => item}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
+          <ScrollView
+            contentContainerStyle={styles.breedList}
+            keyboardShouldPersistTaps="handled"
+          >
+            {selectedSpeciesMeta.breeds.map((item) => {
+              const isOther = item === "Outra";
+              const selected = breed === item && !isOther;
+              return (
                 <TouchableOpacity
+                  key={item}
                   style={[
-                    styles.modalItem,
-                    raca === item && styles.modalItemActive,
+                    styles.breedOption,
+                    selected && styles.breedOptionSelected,
                   ]}
-                  onPress={() => selecionarRaca(item)}
-                  activeOpacity={0.85}
+                  onPress={() => selectBreed(item)}
                 >
+                  <View style={styles.breedOptionIcon}>
+                    <MaterialCommunityIcons
+                      name={isOther ? "pencil-outline" : "paw-outline"}
+                      size={20}
+                      color={selected ? "#FFFFFF" : "#0F766E"}
+                    />
+                  </View>
                   <Text
                     style={[
-                      styles.modalItemText,
-                      raca === item && styles.modalItemTextActive,
+                      styles.breedOptionText,
+                      selected && styles.breedOptionTextSelected,
                     ]}
                   >
-                    {item}
+                    {isOther ? "Outra raça ou identificação" : item}
                   </Text>
-
-                  {raca === item && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={20}
-                      color="#0F766E"
-                    />
+                  {!isOther && selected && (
+                    <Ionicons name="checkmark-circle" size={21} color="#FFFFFF" />
                   )}
                 </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
+              );
+            })}
+
+            <View style={styles.customBreedCard}>
+              <Text style={styles.customBreedTitle}>Não encontrou na lista?</Text>
+              <Text style={styles.customBreedSubtitle}>
+                Digite a raça, variedade ou identificação usada pelo tutor.
+              </Text>
+              <View style={styles.customBreedInputBox}>
+                <Ionicons name="create-outline" size={20} color="#0F766E" />
+                <TextInput
+                  style={styles.customBreedInput}
+                  value={customBreed}
+                  onChangeText={setCustomBreed}
+                  placeholder="Digite aqui..."
+                  placeholderTextColor="#94A3B8"
+                  maxLength={100}
+                  autoComplete="off"
+                  importantForAutofill="no"
+                  textContentType="none"
+                />
+              </View>
+              <TouchableOpacity style={styles.customBreedButton} onPress={saveCustomBreed}>
+                <Text style={styles.customBreedButtonText}>Usar esta identificação</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
-    </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+function SectionCard({
+  number,
+  icon,
+  title,
+  subtitle,
+  children,
+}: {
+  number: string;
+  icon: string;
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.sectionCard}>
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionIconBox}>
+          <Ionicons name={icon as any} size={21} color="#0F766E" />
+        </View>
+        <View style={styles.sectionHeaderContent}>
+          <Text style={styles.sectionEyebrow}>ETAPA {number}</Text>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          <Text style={styles.sectionSubtitle}>{subtitle}</Text>
+        </View>
+      </View>
+      <View style={styles.sectionDivider} />
+      {children}
+    </View>
+  );
+}
+
+function FormField({
+  label,
+  required,
+  value,
+  onChangeText,
+  placeholder,
+  helper,
+  icon,
+  keyboardType,
+  maxLength,
+  editable = true,
+}: {
+  label: string;
+  required?: boolean;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  helper?: string;
+  icon: string;
+  keyboardType?: any;
+  maxLength?: number;
+  editable?: boolean;
+}) {
+  return (
+    <View style={styles.formField}>
+      <Text style={styles.fieldLabel}>
+        {label} {required && <Text style={styles.required}>*</Text>}
+      </Text>
+      <View style={[styles.inputBox, !editable && styles.inputBoxDisabled]}>
+        <Ionicons name={icon as any} size={21} color="#0F766E" />
+        <TextInput
+          style={[styles.input, !editable && styles.inputDisabled]}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor="#94A3B8"
+          keyboardType={keyboardType}
+          maxLength={maxLength}
+          editable={editable}
+          selectTextOnFocus={editable}
+          autoComplete="off"
+          importantForAutofill="no"
+          textContentType="none"
+        />
+        {editable && value.length > 0 && (
+          <Ionicons name="checkmark-circle" size={19} color="#10B981" />
+        )}
+      </View>
+      {helper && <Text style={styles.fieldHelper}>{helper}</Text>}
+    </View>
+  );
+}
+
+function OptionButton({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.optionButton,
+        selected && styles.optionButtonSelected,
+      ]}
+      onPress={onPress}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+    >
+      <Text
+        style={[
+          styles.optionButtonText,
+          selected && styles.optionButtonTextSelected,
+        ]}
+      >
+        {label}
+      </Text>
+      {selected && (
+        <Ionicons name="checkmark-circle" size={19} color="#FFFFFF" />
+      )}
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1, backgroundColor: "#F3FAF9" },
+  centerContainer: {
     flex: 1,
-    backgroundColor: "#F6FBFA",
-  },
-
-  content: {
-    paddingBottom: 60,
-  },
-
-  header: {
-    paddingTop: 56,
-    paddingHorizontal: 20,
-    paddingBottom: 18,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-
-  backBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#E0F5F2",
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 30,
+    backgroundColor: "#F3FAF9",
   },
-
-  headerTitle: {
-    fontSize: 19,
-    fontWeight: "900",
-    color: "#061B3A",
-    letterSpacing: -0.4,
-  },
-
-  deleteBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#FEF2F2",
+  loadingIconBox: {
+    width: 82,
+    height: 82,
+    marginBottom: 18,
+    borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "#DFF7F4",
   },
-
-  heroCard: {
-    marginHorizontal: 18,
-    marginBottom: 22,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 30,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#D8F7F2",
-    shadowColor: "#0F766E",
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    elevation: 4,
-  },
-
-  fotoSection: {
-    alignItems: "center",
-  },
-
-  fotoWrap: {
-    position: "relative",
-    marginBottom: 10,
-  },
-
-  fotoImg: {
-    width: 118,
-    height: 118,
-    borderRadius: 59,
-    borderWidth: 4,
-    borderColor: "#B2EEEA",
-  },
-
-  fotoPlaceholder: {
-    width: 118,
-    height: 118,
-    borderRadius: 59,
-    backgroundColor: "#F0FDFA",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 4,
-    borderColor: "#B2EEEA",
-    borderStyle: "dashed",
-  },
-
-  cameraBtn: {
-    position: "absolute",
-    bottom: 5,
-    right: 5,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#0F766E",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 3,
-    borderColor: "#FFFFFF",
-  },
-
-  fotoTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  fotoHint: {
-    marginTop: 3,
-    fontSize: 12,
-    color: "#94A3B8",
-    fontWeight: "600",
-  },
-
-  removePhotoBtn: {
-    marginTop: 10,
-    backgroundColor: "#FEF2F2",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 14,
-  },
-
-  removePhotoText: {
-    color: "#EF4444",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-
-  scorePreview: {
-    marginTop: 22,
-    backgroundColor: "#F8FFFE",
-    borderRadius: 24,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderWidth: 1,
-    borderColor: "#D8F7F2",
-  },
-
-  scoreTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  scoreSub: {
-    fontSize: 12,
-    color: "#64748B",
-    marginTop: 4,
-    fontWeight: "600",
-    lineHeight: 17,
-  },
-
-  scoreDetails: {
-    marginTop: 12,
-    gap: 6,
-  },
-
-  scoreMiniItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-
-  scoreMiniText: {
-    fontSize: 11,
-    color: "#64748B",
-    fontWeight: "700",
-  },
-
-  scoreBadge: {
-    minWidth: 88,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: 20,
-    alignItems: "center",
-  },
-
-  scoreNum: {
-    fontSize: 28,
-    fontWeight: "900",
-    letterSpacing: -0.6,
-  },
-
-  scoreLabel: {
-    fontSize: 10,
-    fontWeight: "900",
-    marginTop: -1,
-    textAlign: "center",
-  },
-
-  section: {
-    marginHorizontal: 18,
-    marginBottom: 22,
-  },
-
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: "900",
-    color: "#0F172A",
-    marginBottom: 4,
-  },
-
-  sectionSub: {
-    fontSize: 12,
-    color: "#94A3B8",
-    fontWeight: "600",
-    marginBottom: 13,
-    lineHeight: 18,
-  },
-
-  row: {
-    flexDirection: "row",
-    gap: 10,
-  },
-
-  fieldWrap: {
-    marginBottom: 13,
-  },
-
-  label: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: "#334155",
-    marginBottom: 7,
-  },
-
-  inputWrap: {
-    height: 52,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
+  loadingTitle: { marginTop: 14, color: "#0F172A", fontSize: 19, fontWeight: "900" },
+  loadingText: { marginTop: 6, color: "#64748B", fontSize: 14, textAlign: "center" },
+  errorTitle: { marginTop: 16, color: "#0F172A", fontSize: 20, fontWeight: "900", textAlign: "center" },
+  errorText: { marginTop: 8, color: "#64748B", fontSize: 14, lineHeight: 21, textAlign: "center" },
+  retryButton: {
+    minHeight: 48,
+    marginTop: 20,
+    paddingHorizontal: 22,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-    paddingHorizontal: 14,
-  },
-
-  selectorWrap: {
-    height: 52,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-    paddingHorizontal: 14,
-  },
-
-  inputIcon: {
-    marginRight: 10,
-  },
-
-  input: {
-    flex: 1,
-    fontSize: 14,
-    color: "#0F172A",
-    fontWeight: "700",
-  },
-
-  selectorText: {
-    flex: 1,
-    fontSize: 14,
-    color: "#0F172A",
-    fontWeight: "700",
-  },
-
-  selectorPlaceholder: {
-    color: "#CBD5E1",
-    fontWeight: "500",
-  },
-
-  optionList: {
-    gap: 10,
-  },
-
-  optionCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-
-  optionCardActive: {
-    backgroundColor: "#F0FDFA",
-    borderColor: "#0F766E",
-  },
-
-  optionTitle: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#0F172A",
-    marginBottom: 3,
-  },
-
-  optionText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#64748B",
-    lineHeight: 17,
-  },
-
-  alertBox: {
-    marginHorizontal: 18,
-    marginBottom: 22,
-    backgroundColor: "#FEF2F2",
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#FECACA",
-    flexDirection: "row",
-    gap: 12,
-  },
-
-  alertTitle: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#991B1B",
-    marginBottom: 4,
-  },
-
-  alertText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#7F1D1D",
-    lineHeight: 18,
-  },
-
-  warningBox: {
-    marginHorizontal: 18,
-    marginBottom: 22,
-    backgroundColor: "#FFFBEB",
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#FDE68A",
-    flexDirection: "row",
-    gap: 12,
-  },
-
-  warningTitle: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#92400E",
-    marginBottom: 4,
-  },
-
-  warningText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#78350F",
-    lineHeight: 18,
-  },
-
-  infoSituationBox: {
-    marginHorizontal: 18,
-    marginBottom: 22,
-    backgroundColor: "#ECFEFF",
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#A5F3FC",
-    flexDirection: "row",
-    gap: 12,
-  },
-
-  infoSituationTitle: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#155E75",
-    marginBottom: 4,
-  },
-
-  infoSituationText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#155E75",
-    lineHeight: 18,
-  },
-
-  vacinasList: {
-    gap: 9,
-  },
-
-  vacinaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-  },
-
-  vacinaRowActive: {
-    borderColor: "#99F6E4",
-    backgroundColor: "#F0FDFA",
-  },
-
-  vacinaCheck: {
-    width: 27,
-    height: 27,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: "#CBD5E1",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  vacinaCheckActive: {
-    backgroundColor: "#0F766E",
-    borderColor: "#0F766E",
-  },
-
-  vacinaNome: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#64748B",
-  },
-
-  vacinaNomeActive: {
-    color: "#0F172A",
-  },
-
-  vacinaDesc: {
-    marginTop: 2,
-    fontSize: 11,
-    color: "#94A3B8",
-    fontWeight: "600",
-  },
-
-  vacinaStatus: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-
-  vacinaStatusText: {
-    fontSize: 11,
-    fontWeight: "900",
-  },
-
-  carteiraCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-    overflow: "hidden",
-  },
-
-  carteiraCardActive: {
-    borderColor: "#99F6E4",
-    backgroundColor: "#F0FDFA",
-  },
-
-  carteiraEmpty: {
-    minHeight: 150,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 22,
-  },
-
-  carteiraIcon: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: "#E0F5F2",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-
-  carteiraIconActive: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#CCFBF1",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  carteiraPreview: {
-    width: "100%",
-    height: 190,
-    backgroundColor: "#E2E8F0",
-  },
-
-  carteiraInfo: {
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-
-  carteiraTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#0F172A",
-    textAlign: "center",
-  },
-
-  carteiraSub: {
-    marginTop: 4,
-    fontSize: 12,
-    color: "#64748B",
-    fontWeight: "600",
-    lineHeight: 17,
-    textAlign: "center",
-  },
-
-  removeCarteiraBtn: {
-    marginTop: 10,
-    alignSelf: "flex-start",
-    backgroundColor: "#FEF2F2",
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-
-  removeCarteiraText: {
-    color: "#EF4444",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-
-  textAreaWrap: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2F8F5",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    minHeight: 120,
-  },
-
-  textArea: {
-    flex: 1,
-    minHeight: 95,
-    fontSize: 14,
-    color: "#0F172A",
-    fontWeight: "600",
-    lineHeight: 20,
-  },
-
-  infoCard: {
-    marginHorizontal: 18,
-    marginBottom: 24,
-    backgroundColor: "#ECFEFF",
-    borderRadius: 22,
-    padding: 17,
-    flexDirection: "row",
-    gap: 13,
-    borderWidth: 1,
-    borderColor: "#CFFAFE",
-  },
-
-  infoIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#0F172A",
-    marginBottom: 4,
-  },
-
-  infoText: {
-    fontSize: 12,
-    color: "#475569",
-    fontWeight: "600",
-    lineHeight: 18,
-  },
-
-  saveBtn: {
-    marginHorizontal: 18,
-    marginTop: 2,
-    backgroundColor: "#0F766E",
-    borderRadius: 22,
-    paddingVertical: 17,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    shadowColor: "#0F766E",
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-
-  saveBtnDisabled: {
-    opacity: 0.6,
-  },
-
-  saveBtnText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-
-  unidadePesoBox: {
-    flexDirection: "row",
-    backgroundColor: "#E0F5F2",
-    borderRadius: 12,
-    padding: 3,
-    marginLeft: 8,
-  },
-
-  unidadePesoBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 9,
-  },
-
-  unidadePesoBtnActive: {
     backgroundColor: "#0F766E",
   },
-
-  unidadePesoBtnDisabled: {
-    opacity: 0.3,
+  retryButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900" },
+  header: {
+    minHeight: 178,
+    paddingTop: 50,
+    paddingHorizontal: 18,
+    paddingBottom: 28,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 14,
+    overflow: "hidden",
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
   },
-
-  unidadePesoText: {
-    fontSize: 11,
+  headerCircleOne: {
+    position: "absolute",
+    width: 190,
+    height: 190,
+    top: -85,
+    right: -52,
+    borderRadius: 95,
+    backgroundColor: "rgba(255,255,255,0.10)",
+  },
+  headerCircleTwo: {
+    position: "absolute",
+    width: 110,
+    height: 110,
+    bottom: -54,
+    left: 76,
+    borderRadius: 55,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  backButton: {
+    width: 43,
+    height: 43,
+    zIndex: 2,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#022C22",
+    shadowOpacity: 0.18,
+    shadowRadius: 7,
+    elevation: 4,
+  },
+  headerContent: { flex: 1, zIndex: 2, paddingTop: 1 },
+  headerEyebrow: { color: "#99F6E4", fontSize: 10, fontWeight: "900", letterSpacing: 1.15 },
+  headerTitle: { marginTop: 4, color: "#FFFFFF", fontSize: 27, fontWeight: "900", letterSpacing: -0.6 },
+  headerSubtitle: { maxWidth: 280, marginTop: 5, color: "#D9FFFA", fontSize: 12, fontWeight: "600", lineHeight: 17 },
+  content: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 48 },
+  summaryCard: {
+    minHeight: 104,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: "#D9EEEB",
+    borderRadius: 23,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#0F766E",
+    shadowOpacity: 0.07,
+    shadowRadius: 13,
+    elevation: 3,
+  },
+  summaryIcon: { width: 67, height: 67, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  summaryContent: { flex: 1, marginLeft: 13 },
+  summaryLabel: { color: "#0F766E", fontSize: 9, fontWeight: "900", letterSpacing: 1 },
+  summaryName: { marginTop: 3, color: "#0F172A", fontSize: 19, fontWeight: "900" },
+  summaryDetails: { marginTop: 3, color: "#64748B", fontSize: 11, fontWeight: "700" },
+  progressBadge: { minWidth: 54, paddingHorizontal: 8, paddingVertical: 9, borderRadius: 14, alignItems: "center", backgroundColor: "#ECFDF5" },
+  progressBadgeValue: { color: "#047857", fontSize: 15, fontWeight: "900" },
+  progressBadgeLabel: { marginTop: 1, color: "#059669", fontSize: 8, fontWeight: "800" },
+  progressTrack: { height: 6, marginTop: 10, marginHorizontal: 7, marginBottom: 18, borderRadius: 999, overflow: "hidden", backgroundColor: "#DDEEEB" },
+  progressFill: { height: "100%", borderRadius: 999, backgroundColor: "#14B8A6" },
+  sectionCard: {
+    marginBottom: 16,
+    padding: 17,
+    borderWidth: 1,
+    borderColor: "#DDEEEB",
+    borderRadius: 23,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#0F766E",
+    shadowOpacity: 0.045,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  sectionHeader: { flexDirection: "row", alignItems: "center" },
+  sectionIconBox: { width: 45, height: 45, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#DFF7F4" },
+  sectionHeaderContent: { flex: 1, marginLeft: 11 },
+  sectionEyebrow: { color: "#14B8A6", fontSize: 9, fontWeight: "900", letterSpacing: 0.9 },
+  sectionTitle: { marginTop: 1, color: "#0F172A", fontSize: 17, fontWeight: "900" },
+  sectionSubtitle: { marginTop: 2, color: "#64748B", fontSize: 11, fontWeight: "600" },
+  sectionDivider: { height: 1, marginVertical: 16, backgroundColor: "#ECF3F2" },
+  formField: { marginBottom: 16 },
+  fieldLabel: { marginBottom: 8, color: "#334155", fontSize: 12, fontWeight: "900" },
+  required: { color: "#EF4444" },
+  inputBox: {
+    minHeight: 54,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "#D7E9E7",
+    borderRadius: 17,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#F8FCFB",
+  },
+  inputBoxDisabled: {
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F1F5F4",
+  },
+  input: { flex: 1, color: "#0F172A", fontSize: 14, fontWeight: "600" },
+  inputDisabled: { color: "#94A3B8" },
+  fieldHelper: { marginTop: 6, color: "#94A3B8", fontSize: 10, fontWeight: "600", lineHeight: 15 },
+  unknownDateButton: {
+    minHeight: 66,
+    marginTop: -3,
+    marginBottom: 18,
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: "#D7E9E7",
+    borderRadius: 17,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FCFB",
+  },
+  unknownDateButtonSelected: {
+    borderColor: "#5EEAD4",
+    backgroundColor: "#F0FDFA",
+  },
+  unknownDateCheckbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: "#94A3B8",
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  unknownDateCheckboxSelected: {
+    borderColor: "#0F766E",
+    backgroundColor: "#0F766E",
+  },
+  unknownDateContent: { flex: 1, marginLeft: 11 },
+  unknownDateTitle: {
+    color: "#334155",
+    fontSize: 12,
     fontWeight: "900",
-    color: "#0F766E",
   },
-
-  unidadePesoTextActive: {
-    color: "#FFFFFF",
-  },
-
-  unidadePesoTextDisabled: {
-    color: "#94A3B8",
-  },
-
-  pesoHint: {
-    marginTop: 6,
-    fontSize: 11,
-    color: "#94A3B8",
+  unknownDateTitleSelected: { color: "#0F766E" },
+  unknownDateText: {
+    marginTop: 3,
+    color: "#64748B",
+    fontSize: 10,
+    lineHeight: 14,
     fontWeight: "600",
   },
-
-  modalOverlay: {
+  selector: {
+    minHeight: 64,
+    marginBottom: 17,
+    padding: 10,
+    paddingRight: 13,
+    borderWidth: 1,
+    borderColor: "#D7E9E7",
+    borderRadius: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FCFB",
+  },
+  selectorIcon: { width: 45, height: 45, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  selectorIconNeutral: { width: 45, height: 45, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#DFF7F4" },
+  selectorContent: { flex: 1, marginLeft: 11 },
+  selectorValue: { color: "#0F172A", fontSize: 14, fontWeight: "900" },
+  selectorPlaceholder: { color: "#64748B" },
+  selectorHint: { marginTop: 3, color: "#94A3B8", fontSize: 10, fontWeight: "600" },
+  twoColumns: { marginBottom: 17, flexDirection: "row", gap: 9 },
+  optionButton: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.45)",
-    justifyContent: "flex-end",
-  },
-
-  modalBox: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    padding: 20,
-    maxHeight: "78%",
-  },
-
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingBottom: 16,
-  },
-
-  modalTitle: {
-    fontSize: 19,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-
-  modalItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    paddingVertical: 15,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
-  },
-
-  modalItemActive: {
-    backgroundColor: "#F0FDFA",
-    borderRadius: 15,
-    borderBottomColor: "transparent",
+    minHeight: 52,
     paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#D7E9E7",
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    backgroundColor: "#F8FCFB",
   },
-
-  modalItemText: {
+  optionButtonSelected: { borderColor: "#0F766E", backgroundColor: "#0F766E" },
+  optionButtonText: { color: "#475569", fontSize: 12, fontWeight: "900" },
+  optionButtonTextSelected: { color: "#FFFFFF" },
+  sizeSelector: {
+    minHeight: 60,
+    padding: 5,
+    borderWidth: 1,
+    borderColor: "#D7E9E7",
+    borderRadius: 19,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#EAF5F3",
+  },
+  sizeOption: {
     flex: 1,
-    fontSize: 15,
-    color: "#64748B",
-    fontWeight: "700",
+    minHeight: 48,
+    paddingHorizontal: 7,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
   },
-
-  modalItemTextActive: {
-    color: "#0F172A",
+  sizeOptionSelected: {
+    backgroundColor: "#0F766E",
+    shadowColor: "#064E4A",
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  sizeOptionText: {
+    color: "#52636F",
+    fontSize: 11,
     fontWeight: "900",
   },
+  sizeOptionTextSelected: { color: "#FFFFFF" },
+  sizeHelper: {
+    marginTop: 7,
+    color: "#94A3B8",
+    fontSize: 10,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  weightRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  weightInputBox: {
+    flex: 1,
+    minHeight: 54,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: "#D7E9E7",
+    borderRadius: 17,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#F8FCFB",
+  },
+  weightInput: { flex: 1, color: "#0F172A", fontSize: 15, fontWeight: "700" },
+  unitSelector: { height: 54, padding: 4, borderRadius: 16, flexDirection: "row", alignItems: "center", backgroundColor: "#E2F3F1" },
+  unitButton: { minWidth: 42, height: 46, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  unitButtonSelected: { backgroundColor: "#FFFFFF", shadowColor: "#0F766E", shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  unitButtonText: { color: "#64748B", fontSize: 12, fontWeight: "900" },
+  unitButtonTextSelected: { color: "#0F766E" },
+  apiNotice: { padding: 13, borderWidth: 1, borderColor: "#A7F3D0", borderRadius: 17, flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#ECFDF5" },
+  apiNoticeIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#D1FAE5" },
+  apiNoticeTitle: { color: "#065F46", fontSize: 12, fontWeight: "900" },
+  apiNoticeText: { marginTop: 3, color: "#047857", fontSize: 10, lineHeight: 15, fontWeight: "600" },
+  saveButton: { marginTop: 4, borderRadius: 19, overflow: "hidden", shadowColor: "#0F766E", shadowOpacity: 0.2, shadowRadius: 11, elevation: 5 },
+  saveButtonDisabled: { opacity: 0.72 },
+  saveButtonGradient: { minHeight: 58, paddingHorizontal: 18, borderRadius: 19, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
+  saveButtonText: { color: "#FFFFFF", fontSize: 15, fontWeight: "900" },
+  footerText: { marginTop: 15, color: "#94A3B8", fontSize: 10, textAlign: "center", fontWeight: "600" },
+  modalContainer: { flex: 1, backgroundColor: "#F6FBFA" },
+  modalHeader: {
+    minHeight: 110,
+    paddingTop: 48,
+    paddingHorizontal: 18,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#DDEEEB",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#FFFFFF",
+  },
+  modalCloseButton: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: "#DFF7F4" },
+  modalTitle: { color: "#0F172A", fontSize: 21, fontWeight: "900" },
+  modalSubtitle: { marginTop: 3, color: "#64748B", fontSize: 11, fontWeight: "600" },
+  searchBox: { minHeight: 52, margin: 16, marginBottom: 4, paddingHorizontal: 14, borderWidth: 1, borderColor: "#D7E9E7", borderRadius: 17, flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: "#FFFFFF" },
+  searchInput: { flex: 1, color: "#0F172A", fontSize: 14 },
+  speciesList: { padding: 16, paddingBottom: 36 },
+  speciesRow: { gap: 11 },
+  speciesCard: { flex: 1, minHeight: 158, marginBottom: 11, padding: 14, borderWidth: 1, borderColor: "#DDEEEB", borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF" },
+  speciesCardSelected: { borderWidth: 2, borderColor: "#0F766E", backgroundColor: "#F0FDFA" },
+  speciesCardIcon: { width: 61, height: 61, borderRadius: 21, alignItems: "center", justifyContent: "center" },
+  speciesCardName: { marginTop: 10, color: "#0F172A", fontSize: 14, fontWeight: "900", textAlign: "center" },
+  speciesCardSubtitle: { marginTop: 4, color: "#64748B", fontSize: 9, lineHeight: 13, fontWeight: "600", textAlign: "center" },
+  selectedBadge: { position: "absolute", top: 9, right: 9, width: 23, height: 23, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#0F766E" },
+  modalEmpty: { paddingTop: 80, alignItems: "center" },
+  modalEmptyTitle: { marginTop: 12, color: "#64748B", fontSize: 14, fontWeight: "800" },
+  breedList: { padding: 16, paddingBottom: 40 },
+  breedOption: { minHeight: 54, marginBottom: 9, paddingHorizontal: 13, borderWidth: 1, borderColor: "#DDEEEB", borderRadius: 16, flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#FFFFFF" },
+  breedOptionSelected: { borderColor: "#0F766E", backgroundColor: "#0F766E" },
+  breedOptionIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.18)" },
+  breedOptionText: { flex: 1, color: "#334155", fontSize: 13, fontWeight: "800" },
+  breedOptionTextSelected: { color: "#FFFFFF" },
+  customBreedCard: { marginTop: 10, padding: 16, borderWidth: 1, borderColor: "#99F6E4", borderRadius: 20, backgroundColor: "#F0FDFA" },
+  customBreedTitle: { color: "#115E59", fontSize: 15, fontWeight: "900" },
+  customBreedSubtitle: { marginTop: 4, color: "#0F766E", fontSize: 10, lineHeight: 15, fontWeight: "600" },
+  customBreedInputBox: { minHeight: 51, marginTop: 13, paddingHorizontal: 13, borderWidth: 1, borderColor: "#A7F3D0", borderRadius: 15, flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: "#FFFFFF" },
+  customBreedInput: { flex: 1, color: "#0F172A", fontSize: 14 },
+  customBreedButton: { minHeight: 48, marginTop: 11, borderRadius: 15, alignItems: "center", justifyContent: "center", backgroundColor: "#0F766E" },
+  customBreedButtonText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900" },
 });
