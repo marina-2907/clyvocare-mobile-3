@@ -1,286 +1,500 @@
-# ClyvoCare Mobile
+# 🐾 ClyvoCare
 
-Aplicativo mobile desenvolvido em React Native com Expo para auxiliar tutores no acompanhamento da saúde dos seus pets.
+Aplicativo mobile desenvolvido para auxiliar tutores no acompanhamento contínuo da saúde e dos cuidados de seus pets.
 
-O ClyvoCare permite cadastrar pets, visualizar informações principais, acompanhar histórico de saúde, agenda de cuidados, alertas inteligentes, perfil do tutor e planos de cuidado. Nesta sprint, o foco foi criar um protótipo funcional com navegação entre telas, formulário com manipulação de estado e persistência local utilizando AsyncStorage.
+O ClyvoCare centraliza informações do tutor e dos animais em uma única aplicação, permitindo cadastro de pets, acompanhamento de consultas, histórico clínico, agenda de cuidados, alertas inteligentes e visualização de informações importantes sobre a saúde do animal.
 
----
-
-## Objetivo do Projeto
-
-O objetivo do ClyvoCare é oferecer uma solução simples, intuitiva e funcional para centralizar informações importantes sobre a saúde dos pets, ajudando o tutor a acompanhar vacinas, consultas, exames, tratamentos e recomendações preventivas.
-
-Nesta versão mobile, o aplicativo simula o funcionamento da solução utilizando armazenamento local no dispositivo.
+Nesta versão, o aplicativo mobile está integrado a uma **API REST desenvolvida em Java com Spring Boot**, utilizando **Oracle Database** para persistência dos dados.
 
 ---
 
-## Tecnologias Utilizadas
+## 📱 Sobre o projeto
+
+A proposta do ClyvoCare é facilitar a rotina de cuidados dos tutores e proporcionar uma visão mais organizada sobre a saúde de cada pet.
+
+A aplicação permite que um mesmo tutor possua múltiplos animais cadastrados e acompanhe individualmente informações como consultas, vacinas, exames, tratamentos, peso, dados cadastrais e histórico de saúde.
+
+Além disso, o sistema possui uma área de alertas inteligentes que utiliza regras baseadas nos dados disponíveis para apresentar orientações preventivas ao tutor.
+
+> Os alertas apresentados pelo ClyvoCare possuem caráter informativo e não substituem avaliação ou diagnóstico realizado por um médico-veterinário.
+
+---
+
+# ✨ Principais funcionalidades
+
+## 🔐 Autenticação
+
+O aplicativo possui fluxo de autenticação integrado ao backend.
+
+Funcionalidades disponíveis:
+
+- Cadastro de tutor;
+- Login;
+- Persistência da sessão;
+- Logout;
+- Consulta e atualização do perfil autenticado.
+
+A autenticação da API utiliza **JWT (JSON Web Token)**.
+
+---
+
+## 🏠 Home
+
+A tela inicial apresenta uma visão geral do pet selecionado.
+
+Entre as informações apresentadas estão:
+
+- Pet em destaque;
+- Resumo de saúde;
+- Informações de peso e idade;
+- Situação dos cuidados registrados;
+- Próxima consulta;
+- Acesso rápido às principais funcionalidades;
+- Alertas e recomendações;
+- Seleção entre diferentes pets cadastrados pelo tutor.
+
+A Home utiliza os dados disponíveis na aplicação e na API para apresentar informações de forma dinâmica.
+
+---
+
+## 🐶 Meus Pets
+
+O tutor pode possuir mais de um pet cadastrado.
+
+A tela permite:
+
+- Visualizar todos os pets do tutor;
+- Selecionar o pet que será utilizado nas demais telas;
+- Consultar informações do animal;
+- Editar seus dados;
+- Excluir um pet;
+- Cadastrar novos pets.
+
+---
+
+## ➕ Cadastro de Pet
+
+O cadastro de pets possui formulário completo com informações como:
+
+- Nome;
+- Espécie;
+- Sexo;
+- Data de nascimento;
+- Opção para nascimento desconhecido;
+- Peso atual;
+- Porte;
+- Informações adicionais.
+
+As espécies disponíveis são carregadas através da API.
+
+Após o cadastro, os dados são persistidos no Oracle e a listagem de pets é atualizada automaticamente.
+
+---
+
+## 📅 Agenda
+
+A Agenda permite acompanhar os compromissos relacionados aos cuidados do pet.
+
+O sistema apresenta consultas futuras e utiliza a data atual para indicar quando uma consulta está se aproximando.
+
+São exibidas informações como:
+
+- Data;
+- Horário;
+- Tipo de atendimento;
+- Profissional;
+- Clínica;
+- Observações;
+- Situação da consulta.
+
+A aplicação diferencia consultas futuras, consultas do dia e registros anteriores.
+
+---
+
+## 🩺 Histórico de Saúde
+
+O histórico organiza informações clínicas relacionadas ao pet.
+
+Podem ser acompanhados registros como:
+
+- Consultas;
+- Vacinas;
+- Exames;
+- Tratamentos;
+- Prescrições;
+- Outras informações clínicas disponibilizadas pela API.
+
+Cada registro é associado ao pet selecionado, permitindo consultar sua trajetória de cuidados de maneira individual.
+
+---
+
+## 🤖 Clyvo IA
+
+O ClyvoCare possui uma área de inteligência de apoio ao tutor.
+
+Nesta versão, o componente utiliza **regras determinísticas e análise dos dados disponíveis no sistema** para gerar insights e alertas preventivos.
+
+Os alertas podem levar em consideração informações como:
+
+- Idade;
+- Peso;
+- Agenda;
+- Histórico;
+- Vacinas;
+- Cuidados registrados;
+- Informações disponíveis sobre o animal.
+
+A proposta é apoiar a organização e priorização dos cuidados sem realizar diagnóstico veterinário.
+
+---
+
+## 👤 Perfil do Tutor
+
+A área de perfil utiliza os dados do usuário autenticado.
+
+O tutor pode:
+
+- Consultar seus dados;
+- Atualizar informações pessoais;
+- Visualizar informações associadas à conta;
+- Sair da aplicação.
+
+---
+
+# 🏗️ Arquitetura da solução
+
+A versão atual utiliza a seguinte arquitetura:
+
+```text
+┌───────────────────────────────┐
+│         ClyvoCare Mobile      │
+│ React Native + Expo + TS      │
+└──────────────┬────────────────┘
+               │
+               │ HTTP / REST + JWT
+               ▼
+┌───────────────────────────────┐
+│        API Java Spring        │
+│      Spring Boot / JPA        │
+└──────────────┬────────────────┘
+               │
+               │ JDBC / Hibernate
+               ▼
+┌───────────────────────────────┐
+│        Oracle Database        │
+│         FIAP - ORCL           │
+└───────────────────────────────┘
+```
+
+O mobile não acessa o banco diretamente.
+
+Toda comunicação com os dados persistidos ocorre através da API REST.
+
+---
+
+# 🧰 Tecnologias utilizadas
+
+### Mobile
 
 - React Native
 - Expo
 - TypeScript
 - React Navigation
+- TanStack React Query
 - AsyncStorage
-- Expo Image Picker
-- React Native SVG
 - Expo Vector Icons
 
----
+### Backend
 
-## Funcionalidades
+- Java
+- Spring Boot
+- Spring Web
+- Spring Data JPA
+- Hibernate
+- Spring Security
+- JWT
+- Gradle
+- Flyway
 
-### Home
+### Banco de Dados
 
-A tela inicial apresenta um resumo geral do aplicativo, incluindo:
-
-- Pet em destaque
-- Score inteligente de saúde
-- Resumo de vacinas e cuidados
-- Próximos cuidados sugeridos
-- Acesso rápido para outras telas
-- Alertas inteligentes
-- Planos ClyvoCare
-
----
-
-### Cadastro de Pet
-
-A tela de cadastro permite registrar informações do animal, como:
-
-- Nome do pet
-- Espécie
-- Raça
-- Idade
-- Peso
-- Situação vacinal
-- Castração
-- Vacinas e cuidados preventivos
-- Carteirinha de vacinação
-- Documentação do animal, quando aplicável
-- Histórico de saúde e observações
-
-O formulário utiliza manipulação de estado com `useState`, permitindo que os dados sejam atualizados dinamicamente conforme o usuário preenche os campos.
-
-Além disso, o app calcula um score inteligente de saúde em tempo real, considerando informações como espécie, idade, peso, vacinas, documentação, castração e histórico clínico.
+- Oracle Database
+- Oracle FIAP ORCL
 
 ---
 
-### Meus Pets
+# 📂 Estrutura principal
 
-A tela de Meus Pets permite:
-
-- Visualizar todos os pets cadastrados
-- Escolher qual pet aparece em destaque na Home
-- Editar informações de um pet
-- Excluir pets cadastrados
-- Visualizar score, status e informações principais
-
----
-
-### Histórico do Pet
-
-A tela de histórico permite registrar eventos relacionados à saúde do pet, como:
-
-- Consultas
-- Vacinas
-- Exames
-- Tratamentos
-
-Cada registro é associado a um pet específico e salvo localmente. A tela também apresenta um gráfico simples de evolução da saúde com base nas notas registradas.
-
----
-
-### Agenda Inteligente
-
-A agenda gera recomendações automáticas com base nos dados cadastrados do pet.
-
-Exemplos de recomendações:
-
-- Revisão vacinal
-- Consulta inicial para pet resgatado
-- Exames preventivos
-- Avaliação de castração
-- Tratamentos sugeridos
-- Revisão do histórico de saúde
-
-As recomendações são geradas de forma personalizada conforme a espécie, situação vacinal, castração, vacinas e observações clínicas.
+```text
+challenge12-clyvocare/
+│
+├── assets/
+│   └── images/
+│
+├── src/
+│   ├── components/
+│   ├── contexts/
+│   ├── hooks/
+│   ├── navigation/
+│   ├── screens/
+│   ├── services/
+│   ├── types/
+│   └── utils/
+│
+├── backend-java/
+│   ├── gradle/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── java/
+│   │   │   └── resources/
+│   │   │       └── db/migration/
+│   │   └── test/
+│   ├── build.gradle
+│   ├── gradlew
+│   └── gradlew.bat
+│
+├── App.tsx
+├── app.json
+├── package.json
+├── package-lock.json
+├── tsconfig.json
+└── README.md
+```
 
 ---
 
-### Alertas IA
+# 🔌 Integração Mobile + API
 
-A tela de Alertas IA simula uma inteligência artificial baseada em regras inteligentes.
+A aplicação utiliza uma camada de serviços responsável pela comunicação com o backend.
 
-Ela analisa os dados cadastrados do pet e gera alertas preventivos, classificados por nível de risco:
+Entre os principais serviços estão:
 
-- Baixo
-- Médio
-- Alto
+```text
+src/services/
+├── api.ts
+├── authService.ts
+├── clinicalService.ts
+├── localCareService.ts
+├── ownerService.ts
+└── petService.ts
+```
 
-Os alertas podem ser marcados como resolvidos e essa informação também é salva localmente.
+A URL da API pode ser configurada através da variável:
 
----
+```text
+EXPO_PUBLIC_API_URL
+```
 
-### Perfil do Tutor
+No emulador Android, a aplicação pode utilizar:
 
-A tela de perfil permite:
+```text
+http://10.0.2.2:8080
+```
 
-- Criar perfil do tutor
-- Editar informações pessoais
-- Excluir perfil
-- Visualizar quantidade de pets cadastrados
-- Gerenciar plano ClyvoCare
-- Escolher plano mensal ou anual
-
-Os dados do perfil e do plano são armazenados localmente com AsyncStorage.
-
----
-
-## Armazenamento Local
-
-Nesta sprint, o aplicativo utiliza `AsyncStorage` para persistência local dos dados.
-
-São armazenadas informações como:
-
-- Pets cadastrados
-- Pet escolhido para aparecer na Home
-- Histórico de saúde dos pets
-- Alertas resolvidos
-- Perfil do tutor
-- Plano atual
-
-Mesmo após recarregar o aplicativo, os dados continuam disponíveis, pois são restaurados a partir do armazenamento local.
-
-Na próxima etapa do projeto, a proposta é integrar esses dados com uma API em Java e banco de dados.
+O endereço `10.0.2.2` permite que o emulador Android acesse o `localhost` da máquina hospedeira.
 
 ---
 
-## Navegação entre Telas
+# 🚀 Como executar o projeto
 
-O aplicativo possui navegação entre múltiplas telas, incluindo:
+## 1. Pré-requisitos
 
-- Home
-- Cadastro de Pet
-- Meus Pets
-- Histórico
-- Agenda
-- Alertas IA
-- Perfil
+É necessário possuir:
 
-A navegação foi implementada utilizando React Navigation.
-
----
-
-## Como Executar o Projeto
-
-### Pré-requisitos
-
-Antes de iniciar, é necessário ter instalado:
-
-- Node.js
-- Expo
-- Android Studio
-- Emulador Android configurado
-- Git
+- Git;
+- Node.js;
+- npm;
+- Java;
+- Android Studio;
+- Emulador Android;
+- acesso ao Oracle FIAP, quando necessário para executar o backend.
 
 ---
 
-### Instalação
+## 2. Clonar o repositório
 
-Clone o repositório:
+```bash
+git clone https://github.com/2TDSPX/challenge12-clyvocare.git
+```
 
-bash
+Acesse a pasta:
 
-git clone (https://github.com/2TDSPX/challenge12-clyvocare.git)
+```bash
+cd challenge12-clyvocare
+```
 
-Acesse a pasta do projeto:
+---
 
-cd clyvocare-mobile
+# ⚙️ Executando o Backend
+
+Acesse:
+
+```bash
+cd backend-java
+```
+
+No Windows PowerShell, configure as variáveis de ambiente:
+
+```powershell
+$env:DB_USERNAME="SEU_USUARIO_ORACLE"
+$env:DB_PASSWORD="SUA_SENHA_ORACLE"
+$env:JWT_SECRET="SUA_CHAVE_JWT_COM_PELO_MENOS_64_CARACTERES"
+```
+
+As credenciais **não são armazenadas no repositório**.
+
+O arquivo `application.properties` utiliza:
+
+```properties
+spring.datasource.username=${DB_USERNAME}
+spring.datasource.password=${DB_PASSWORD}
+app.jwt.secret=${JWT_SECRET}
+```
+
+### Banco compartilhado utilizado na demonstração
+
+Como o schema Oracle utilizado durante o desenvolvimento é compartilhado e já possui histórico de migrations, para executar a versão utilizando esse banco pode ser necessário desativar o Flyway na sessão:
+
+```powershell
+$env:SPRING_FLYWAY_ENABLED="false"
+```
+
+Depois execute:
+
+```powershell
+.\gradlew.bat bootRun
+```
+
+A API será iniciada por padrão em:
+
+```text
+http://localhost:8080
+```
+
+---
+
+# 📱 Executando o Mobile
+
+Abra outro terminal e volte para a raiz do projeto:
+
+```powershell
+cd C:\caminho\para\challenge12-clyvocare
+```
 
 Instale as dependências:
 
-npm install
+```bash
+npm ci
+```
 
-Execute o projeto:
+Inicie o Expo:
 
-npx expo start
-
-Para abrir no emulador Android, pressione:
-
-a
-
-Também é possível iniciar limpando o cache:
-
+```bash
 npx expo start -c
-Demonstração em Vídeo
+```
 
-Link do vídeo demonstrativo:
+Para executar no emulador Android, pressione:
+
+```text
+a
+```
+
+---
+
+# 🧪 Testes e validações
+
+Antes da entrega, o projeto foi validado utilizando:
+
+### Mobile
+
+```bash
+npx expo-doctor
+npx tsc --noEmit
+```
+
+O projeto mobile passou nas validações do Expo Doctor e na compilação TypeScript sem erros.
+
+### Backend
+
+```powershell
+$env:SPRING_FLYWAY_ENABLED="false"
+.\gradlew.bat clean test
+```
+
+Resultado obtido:
+
+```text
+BUILD SUCCESSFUL
+```
+
+---
+
+# 🗄️ Persistência
+
+A aplicação utiliza Oracle Database para persistência das principais entidades.
+
+O backend possui entidades e endpoints relacionados a:
+
+- Usuários;
+- Tutores;
+- Pets;
+- Espécies;
+- Cidades;
+- Clínicas;
+- Veterinários;
+- Consultas;
+- Vacinas;
+- Exames;
+- Tratamentos;
+- Prescrições;
+- Lembretes;
+- Catálogo de serviços.
+
+O mobile utiliza AsyncStorage apenas quando necessário para informações locais da aplicação e gerenciamento da sessão, enquanto os dados principais são obtidos e persistidos através da API.
+
+---
+
+# 🔒 Segurança
+
+A API utiliza Spring Security e autenticação JWT.
+
+Rotas protegidas exigem token válido enviado pelo aplicativo.
+
+Informações sensíveis como credenciais do banco de dados e segredo JWT são configuradas através de variáveis de ambiente e não ficam armazenadas diretamente no código-fonte.
+
+---
+
+# 🎥 Demonstração em vídeo
+
+Vídeo da versão anterior:
 
 https://youtu.be/sRD3OKg5e8o?si=OvWMKN_U3sQqHh_G
 
-## O vídeo demonstra:
+> Substituir ou complementar este link pelo vídeo final da entrega, caso seja gravado um novo vídeo demonstrando a integração completa com API e banco Oracle.
 
-Execução do app em emulador Android
-Navegação entre as telas
-Cadastro de pet com formulário funcional
-Manipulação de estado com useState
-Persistência local com AsyncStorage
-Restauração dos dados após recarregar o app
-Funcionamento da Home, Meus Pets, Histórico, Agenda, Alertas IA e Perfil
-Estrutura Principal do Projeto
-src/
-├── navigation/
-│   └── index.tsx
-│
-├── screens/
-│   ├── HomeScreen.tsx
-│   ├── PetRegisterScreen.tsx
-│   ├── PetListScreen.tsx
-│   ├── TimelineScreen.tsx
-│   ├── ScheduleScreen.tsx
-│   ├── AlertScreen.tsx
-│   └── ProfileScreen.tsx
-Critérios Atendidos
-### 1. Navegação entre telas
+---
 
-O app possui mais de cinco rotas navegáveis e permite fluxo entre Home, Cadastro, Meus Pets, Histórico, Agenda, Alertas IA e Perfil.
+# 👥 Integrantes
 
-### 2. Protótipo visual funcional
+**Felipe Maglio Filho**  
+RM 563512
 
-Todas as telas possuem layout visual estruturado e coerente com o fluxo de uso da solução.
+**João Pedro Bitencourt Goldoni**  
+RM 564339
 
-### 3. Formulário com manipulação de estado
+**Marina Tamagnini Magalhães**  
+RM 561786
 
-O cadastro de pet e o perfil do tutor utilizam useState para controlar os campos. Os dados são atualizados conforme o usuário preenche as informações.
+**Mateus Granja dos Santos**  
+RM 564930
 
-### 4. Armazenamento local com AsyncStorage
+**Vitória Valentina Maglio**  
+RM 563509
 
-O app salva dados localmente usando AsyncStorage, incluindo pets, perfil, histórico, plano e alertas resolvidos.
+---
 
-### 5. Demonstração em vídeo narrada
+# ✅ Status do Projeto
 
-O vídeo demonstrativo apresenta o funcionamento do app em emulador Android, mostrando navegação, formulário, persistência local e restauração dos dados.
+**Versão integrada Mobile + API Java + Oracle concluída e validada para entrega.**
 
-## Observações
-
-Nesta sprint, o armazenamento foi feito localmente com AsyncStorage, conforme solicitado nos requisitos da disciplina. A integração com banco de dados e API Java será desenvolvida em uma etapa futura.
-
-A funcionalidade de foto do pet também foi planejada para uma próxima entrega, quando houver integração com API e persistência adequada das imagens.
-
-# Integrantes
-
-- Felipe Maglio Filho - RM 563512
-
-- João Pedro Bitencourt Goldoni - RM 564339
-
-- Marina Tamagnini Magalhães - RM 561786
-
-- Mateus Granja dos Santos - RM 564930
-
-- Vitória Valentina Maglio - RM 563509
-
-## Status do Projeto
-
-Projeto desenvolvido para a 1/2 Sprint da disciplina Mobile Application Development.
-
-### Status: finalizado para entrega.
+Projeto acadêmico desenvolvido para a FIAP.
