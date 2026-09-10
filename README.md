@@ -8,7 +8,7 @@ Nesta versão, o aplicativo mobile está integrado a uma **API REST desenvolvida
 
 ---
 
-## 📱 Sobre o projeto
+##  Sobre o projeto
 
 A proposta do ClyvoCare é facilitar a rotina de cuidados dos tutores e proporcionar uma visão mais organizada sobre a saúde de cada pet.
 
@@ -20,9 +20,9 @@ Além disso, o sistema possui uma área de alertas inteligentes que utiliza regr
 
 ---
 
-# ✨ Principais funcionalidades
+#  Principais funcionalidades
 
-## 🔐 Autenticação
+##  Autenticação
 
 O aplicativo possui fluxo de autenticação integrado ao backend.
 
@@ -38,7 +38,7 @@ A autenticação da API utiliza **JWT (JSON Web Token)**.
 
 ---
 
-## 🏠 Home
+##  Home
 
 A tela inicial apresenta uma visão geral do pet selecionado.
 
@@ -57,7 +57,7 @@ A Home utiliza os dados disponíveis na aplicação e na API para apresentar inf
 
 ---
 
-## 🐶 Meus Pets
+##  Meus Pets
 
 O tutor pode possuir mais de um pet cadastrado.
 
@@ -72,7 +72,7 @@ A tela permite:
 
 ---
 
-## ➕ Cadastro de Pet
+##  Cadastro de Pet
 
 O cadastro de pets possui formulário completo com informações como:
 
@@ -91,7 +91,7 @@ Após o cadastro, os dados são persistidos no Oracle e a listagem de pets é at
 
 ---
 
-## 📅 Agenda
+##  Agenda
 
 A Agenda permite acompanhar os compromissos relacionados aos cuidados do pet.
 
@@ -111,7 +111,7 @@ A aplicação diferencia consultas futuras, consultas do dia e registros anterio
 
 ---
 
-## 🩺 Histórico de Saúde
+##  Histórico de Saúde
 
 O histórico organiza informações clínicas relacionadas ao pet.
 
@@ -128,7 +128,7 @@ Cada registro é associado ao pet selecionado, permitindo consultar sua trajetó
 
 ---
 
-## 🤖 Clyvo IA
+##  Clyvo IA
 
 O ClyvoCare possui uma área de inteligência de apoio ao tutor.
 
@@ -148,7 +148,7 @@ A proposta é apoiar a organização e priorização dos cuidados sem realizar d
 
 ---
 
-## 👤 Perfil do Tutor
+##  Perfil do Tutor
 
 A área de perfil utiliza os dados do usuário autenticado.
 
@@ -161,7 +161,7 @@ O tutor pode:
 
 ---
 
-# 🏗️ Arquitetura da solução
+#  Arquitetura da solução
 
 A versão atual utiliza a seguinte arquitetura:
 
@@ -192,7 +192,7 @@ Toda comunicação com os dados persistidos ocorre através da API REST.
 
 ---
 
-# 🧰 Tecnologias utilizadas
+#  Tecnologias utilizadas
 
 ### Mobile
 
@@ -223,7 +223,7 @@ Toda comunicação com os dados persistidos ocorre através da API REST.
 
 ---
 
-# 📂 Estrutura principal
+#  Estrutura principal
 
 ```text
 challenge12-clyvocare/
@@ -263,7 +263,7 @@ challenge12-clyvocare/
 
 ---
 
-# 🔌 Integração Mobile + API
+#  Integração Mobile + API
 
 A aplicação utiliza uma camada de serviços responsável pela comunicação com o backend.
 
@@ -295,7 +295,7 @@ O endereço `10.0.2.2` permite que o emulador Android acesse o `localhost` da m�
 
 ---
 
-# 🚀 Como executar o projeto
+#  Como executar o projeto
 
 ## 1. Pré-requisitos
 
@@ -325,7 +325,7 @@ cd challenge12-clyvocare
 
 ---
 
-# ⚙️ Executando o Backend
+#  Executando o Backend
 
 Acesse:
 
@@ -373,7 +373,7 @@ http://localhost:8080
 
 ---
 
-# 📱 Executando o Mobile
+#  Executando o Mobile
 
 Abra outro terminal e volte para a raiz do projeto:
 
@@ -401,7 +401,7 @@ a
 
 ---
 
-# 🧪 Testes e validações
+#  Testes e validações
 
 Antes da entrega, o projeto foi validado utilizando:
 
@@ -429,7 +429,7 @@ BUILD SUCCESSFUL
 
 ---
 
-# 🗄️ Persistência
+#  Persistência
 
 A aplicação utiliza Oracle Database para persistência das principais entidades.
 
@@ -454,7 +454,7 @@ O mobile utiliza AsyncStorage apenas quando necessário para informações locai
 
 ---
 
-# 🔒 Segurança
+#  Segurança
 
 A API utiliza Spring Security e autenticação JWT.
 
@@ -464,7 +464,7 @@ Informações sensíveis como credenciais do banco de dados e segredo JWT são c
 
 ---
 
-# 🎥 Demonstração em vídeo
+#  Demonstração em vídeo
 
 Vídeo da versão anterior:
 
@@ -474,7 +474,7 @@ https://youtu.be/sRD3OKg5e8o?si=OvWMKN_U3sQqHh_G
 
 ---
 
-# 👥 Integrantes
+#  Integrantes
 
 **Felipe Maglio Filho**  
 RM 563512
@@ -493,7 +493,7 @@ RM 563509
 
 ---
 
-# ✅ Status do Projeto
+#  Status do Projeto
 
 **Versão integrada Mobile + API Java + Oracle concluída e validada para entrega.**
 
