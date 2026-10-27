@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import { useAuth } from "../contexts/AuthContext";
 import AlertScreen from "../screens/AlertScreen";
+import AboutScreen from "../screens/AboutScreen";
 import HomeScreen from "../screens/HomeScreen";
 import LoginScreen from "../screens/LoginScreen";
 import PetListScreen from "../screens/PetListScreen";
@@ -130,6 +131,7 @@ function AppNavigator() {
     >
       <Stack.Screen name="Main" component={BottomTabs} />
       <Stack.Screen name="Cadastrar Pet" component={PetRegisterScreen} />
+      <Stack.Screen name="Sobre o App" component={AboutScreen} options={{ headerShown: true, title: "Sobre o App" }} />
     </Stack.Navigator>
   );
 }
