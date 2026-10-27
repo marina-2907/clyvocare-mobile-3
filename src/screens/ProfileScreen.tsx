@@ -600,6 +600,15 @@ export default function ProfileScreen({ navigation, route }: any) {
             {usuarioAutenticado ? "Sair da conta" : "Entrar ou criar uma conta"}
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => navigation.navigate("Sobre o App")}
+          style={{ marginHorizontal: 20, marginTop: 16, padding: 18, borderRadius: 14, backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", gap: 12 }}
+        >
+          <Ionicons name="information-circle-outline" size={24} color="#0F766E" />
+          <Text style={{ color: "#134E4A", fontWeight: "700", flex: 1 }}>Sobre o App e versão publicada</Text>
+          <Ionicons name="chevron-forward" size={18} color="#64748B" />
+        </TouchableOpacity>
       </ScrollView>
 
       <Modal visible={modalPerfilVisivel} animationType="slide">
