@@ -25,6 +25,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final UserDetailsServiceImpl userDetailsService;
 
     /** Intercepta a requisição, valida o token (se presente) e popula o SecurityContext antes do controller ser chamado. */
+    @SuppressWarnings("deprecation")
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
