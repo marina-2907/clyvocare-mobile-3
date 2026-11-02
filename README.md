@@ -1,513 +1,198 @@
-# 🐾 ClyvoCare
+# 🐾 ClyvoCare OS — Mobile | Sprint 4
 
-Aplicativo mobile desenvolvido para auxiliar tutores no acompanhamento contínuo da saúde e dos cuidados de seus pets.
+Aplicativo mobile acadêmico da **FIAP**, desenvolvido para auxiliar tutores no acompanhamento da saúde e da rotina de cuidados de seus pets.
 
-O ClyvoCare centraliza informações do tutor e dos animais em uma única aplicação, permitindo cadastro de pets, acompanhamento de consultas, histórico clínico, agenda de cuidados, alertas inteligentes e visualização de informações importantes sobre a saúde do animal.
+**Versão:** 1.0.0 · **Plataforma demonstrada:** Android · **Repositório:** [marina-2907/clyvocare-mobile-3](https://github.com/marina-2907/clyvocare-mobile-3/tree/feat/sprint4-release) · **Branch de entrega:** `feat/sprint4-release`
 
-Nesta versão, o aplicativo mobile está integrado a uma **API REST desenvolvida em Java com Spring Boot**, utilizando **Oracle Database** para persistência dos dados.
+> **Aviso:** orientações e alertas do ClyvoCare têm caráter informativo e não substituem a avaliação de um médico-veterinário.
 
----
+## 1. Sobre o projeto
 
-## Sobre o projeto
+O ClyvoCare centraliza informações do tutor e de seus animais, com cadastro de múltiplos pets, agenda de consultas, histórico de saúde, alertas e recomendações preventivas. O aplicativo mobile consome uma **API REST Java com Spring Boot**, que persiste os dados principais em **Oracle Database**.
 
-A proposta do ClyvoCare é facilitar a rotina de cuidados dos tutores e proporcionar uma visão mais organizada sobre a saúde de cada pet.
+O módulo **Clyvo IA** utiliza regras determinísticas e informações disponíveis no sistema; não realiza diagnósticos veterinários nem representa integração comprovada com um modelo de IA generativa.
 
-A aplicação permite que um mesmo tutor possua múltiplos animais cadastrados e acompanhe individualmente informações como consultas, vacinas, exames, tratamentos, peso, dados cadastrais e histórico de saúde.
+## 2. Funcionalidades
 
-Além disso, o sistema possui uma área de alertas inteligentes que utiliza regras baseadas nos dados disponíveis para apresentar orientações preventivas ao tutor.
+| Módulo | Recursos |
+| --- | --- |
+| Autenticação | Cadastro de tutor, login JWT, persistência da sessão e logout |
+| Home | Resumo do pet selecionado e atalhos para cuidados |
+| Meus Pets | Listagem, seleção, cadastro, edição e exclusão de pets |
+| Cadastro de Pets | Espécies carregadas da API, informações do animal e identificação visual das espécies |
+| Agenda | Consultas, datas, horários, profissionais, clínicas e situações |
+| Histórico | Consultas, vacinas, exames, tratamentos e registros associados ao pet |
+| Clyvo IA / Alertas | Orientações preventivas baseadas nos dados do sistema |
+| Perfil | Consulta e edição de informações do tutor e saída da conta |
+| Sobre o App | Versão do aplicativo e campo para identificação do commit usado no build |
 
-> Os alertas apresentados pelo ClyvoCare possuem caráter informativo e não substituem avaliação ou diagnóstico realizado por um médico-veterinário.
+### Novidades da Sprint 4 — notificações locais
 
----
+- Integração de `expo-notifications` ao aplicativo Android com **development build** (`expo-dev-client`).
+- Solicitação de permissão de notificações e criação do canal Android `consultas`.
+- Quando uma consulta é salva pela API com horário definido, o app tenta programar um lembrete **uma hora antes** do atendimento.
+- O lembrete contém o nome do pet, o horário da consulta e os dados `tipo: "consulta"`, `consultaId` e `tela: "Agenda"`.
+- Se o horário do lembrete já passou, a notificação não é programada; falha no agendamento da notificação não desfaz a consulta salva.
 
-# Principais funcionalidades
+**Atenção:** alertas exibidos dentro do app e notificações do sistema operacional são funcionalidades diferentes. Para a entrega, ainda é preciso **validar e registrar em vídeo** o recebimento da notificação e a navegação para a tela correspondente ao tocá-la. A presença de `tela: "Agenda"` no payload, por si só, não comprova essa navegação.
 
-## Autenticação
-
-O aplicativo possui fluxo de autenticação integrado ao backend.
-
-Funcionalidades disponíveis:
-
-- Cadastro de tutor;
-- Login;
-- Persistência da sessão;
-- Logout;
-- Consulta e atualização do perfil autenticado.
-
-A autenticação da API utiliza **JWT (JSON Web Token)**.
-
----
-
-## Home
-
-A tela inicial apresenta uma visão geral do pet selecionado.
-
-Entre as informações apresentadas estão:
-
-- Pet em destaque;
-- Resumo de saúde;
-- Informações de peso e idade;
-- Situação dos cuidados registrados;
-- Próxima consulta;
-- Acesso rápido às principais funcionalidades;
-- Alertas e recomendações;
-- Seleção entre diferentes pets cadastrados pelo tutor.
-
-A Home utiliza os dados disponíveis na aplicação e na API para apresentar informações de forma dinâmica.
-
----
-
-## Meus Pets
-
-O tutor pode possuir mais de um pet cadastrado.
-
-A tela permite:
-
-- Visualizar todos os pets do tutor;
-- Selecionar o pet que será utilizado nas demais telas;
-- Consultar informações do animal;
-- Editar seus dados;
-- Excluir um pet;
-- Cadastrar novos pets.
-
----
-
-## Cadastro de Pet
-
-O cadastro de pets possui formulário completo com informações como:
-
-- Nome;
-- Espécie;
-- Sexo;
-- Data de nascimento;
-- Opção para nascimento desconhecido;
-- Peso atual;
-- Porte;
-- Informações adicionais.
-
-As espécies disponíveis são carregadas através da API.
-
-Após o cadastro, os dados são persistidos no Oracle e a listagem de pets é atualizada automaticamente.
-
----
-
-## Agenda
-
-A Agenda permite acompanhar os compromissos relacionados aos cuidados do pet.
-
-O sistema apresenta consultas futuras e utiliza a data atual para indicar quando uma consulta está se aproximando.
-
-São exibidas informações como:
-
-- Data;
-- Horário;
-- Tipo de atendimento;
-- Profissional;
-- Clínica;
-- Observações;
-- Situação da consulta.
-
-A aplicação diferencia consultas futuras, consultas do dia e registros anteriores.
-
----
-
-## Histórico de Saúde
-
-O histórico organiza informações clínicas relacionadas ao pet.
-
-Podem ser acompanhados registros como:
-
-- Consultas;
-- Vacinas;
-- Exames;
-- Tratamentos;
-- Prescrições;
-- Outras informações clínicas disponibilizadas pela API.
-
-Cada registro é associado ao pet selecionado, permitindo consultar sua trajetória de cuidados de maneira individual.
-
----
-
-## Clyvo IA
-
-O ClyvoCare possui uma área de inteligência de apoio ao tutor.
-
-Nesta versão, o componente utiliza **regras determinísticas e análise dos dados disponíveis no sistema** para gerar insights e alertas preventivos.
-
-Os alertas podem levar em consideração informações como:
-
-- Idade;
-- Peso;
-- Agenda;
-- Histórico;
-- Vacinas;
-- Cuidados registrados;
-- Informações disponíveis sobre o animal.
-
-A proposta é apoiar a organização e priorização dos cuidados sem realizar diagnóstico veterinário.
-
----
-
-## Perfil do Tutor
-
-A área de perfil utiliza os dados do usuário autenticado.
-
-O tutor pode:
-
-- Consultar seus dados;
-- Atualizar informações pessoais;
-- Visualizar informações associadas à conta;
-- Sair da aplicação.
-
----
-
-# Arquitetura da solução
-
-A versão atual utiliza a seguinte arquitetura:
+## 3. Arquitetura
 
 ```text
-┌───────────────────────────────┐
-│         ClyvoCare Mobile      │
-│ React Native + Expo + TS      │
-└──────────────┬────────────────┘
-               │
-               │ HTTP / REST + JWT
-               ▼
-┌───────────────────────────────┐
-│        API Java Spring        │
-│      Spring Boot / JPA        │
-└──────────────┬────────────────┘
-               │
-               │ JDBC / Hibernate
-               ▼
-┌───────────────────────────────┐
-│        Oracle Database        │
-│         FIAP - ORCL           │
-└───────────────────────────────┘
+ClyvoCare Mobile (React Native + Expo + TypeScript)
+                |
+             HTTP/REST
+              JWT
+                |
+       API Java (Spring Boot)
+     Spring Security / JPA
+                |
+        JDBC / Hibernate
+                |
+         Oracle Database
+             FIAP ORCL
 ```
 
-O mobile não acessa o banco diretamente.
+O aplicativo não acessa o Oracle diretamente: toda consulta ou alteração de dados persistidos passa pela API.
 
-Toda comunicação com os dados persistidos ocorre através da API REST.
+### Tecnologias
 
----
+**Mobile:** React Native, Expo SDK 54, TypeScript, React Navigation, TanStack React Query, AsyncStorage, Expo Vector Icons, Expo Notifications e Expo Dev Client.
 
-# Tecnologias utilizadas
+**Backend:** Java, Spring Boot, Spring Web, Spring Data JPA, Spring Security, JWT, Hibernate, Gradle e Flyway.
 
-### Mobile
+**Banco:** Oracle Database (ambiente FIAP).
 
-- React Native
-- Expo
-- TypeScript
-- React Navigation
-- TanStack React Query
-- AsyncStorage
-- Expo Vector Icons
-
-### Backend
-
-- Java
-- Spring Boot
-- Spring Web
-- Spring Data JPA
-- Hibernate
-- Spring Security
-- JWT
-- Gradle
-- Flyway
-
-### Banco de Dados
-
-- Oracle Database
-- Oracle FIAP ORCL
-
----
-
-# Estrutura principal
+## 4. Organização do repositório
 
 ```text
-challenge12-clyvocare/
-│
+clyvocare-mobile-3/
 ├── assets/
-│   └── images/
-│
 ├── src/
 │   ├── components/
 │   ├── contexts/
 │   ├── hooks/
+│   │   └── useClinical.ts
 │   ├── navigation/
 │   ├── screens/
 │   ├── services/
+│   │   ├── api.ts
+│   │   ├── clinicalService.ts
+│   │   └── notificationService.ts
 │   ├── types/
 │   └── utils/
-│
 ├── backend-java/
-│   ├── gradle/
-│   ├── src/
-│   │   ├── main/
-│   │   │   ├── java/
-│   │   │   └── resources/
-│   │   │       └── db/migration/
-│   │   └── test/
-│   ├── build.gradle
-│   ├── gradlew
+│   ├── src/main/
+│   ├── src/test/
 │   └── gradlew.bat
-│
 ├── App.tsx
 ├── app.json
 ├── package.json
 ├── package-lock.json
-├── tsconfig.json
 └── README.md
 ```
 
----
+## 5. Como executar localmente
 
-# Integração Mobile + API
+### Pré-requisitos
 
-A aplicação utiliza uma camada de serviços responsável pela comunicação com o backend.
+Git, Node.js, npm, Android Studio (emulador e SDK Android), JDK **17** para o build Android, e acesso autorizado ao Oracle FIAP para executar o backend. O primeiro build nativo pode demorar porque baixa e compila dependências Android.
 
-Entre os principais serviços estão:
-
-```text
-src/services/
-├── api.ts
-├── authService.ts
-├── clinicalService.ts
-├── localCareService.ts
-├── ownerService.ts
-└── petService.ts
-```
-
-A URL da API pode ser configurada através da variável:
-
-```text
-EXPO_PUBLIC_API_URL
-```
-
-No emulador Android, a aplicação pode utilizar:
-
-```text
-http://10.0.2.2:8080
-```
-
-O endereço `10.0.2.2` permite que o emulador Android acesse o `localhost` da máquina hospedeira.
-
----
-
-# Como executar o projeto
-
-## 1. Pré-requisitos
-
-É necessário possuir:
-
-- Git;
-- Node.js;
-- npm;
-- Java;
-- Android Studio;
-- Emulador Android;
-- Acesso ao Oracle FIAP, quando necessário para executar o backend.
-
----
-
-## 2. Clonar o repositório
-
-```bash
-git clone https://github.com/2TDSPX/challenge12-clyvocare.git
-```
-
-Acesse a pasta:
-
-```bash
-cd challenge12-clyvocare
-```
-
----
-
-# Executando o Backend
-
-Acesse:
-
-```bash
-cd backend-java
-```
-
-No Windows PowerShell, configure as variáveis de ambiente:
+### Clonar o projeto
 
 ```powershell
-$env:DB_USERNAME="SEU_USUARIO_ORACLE"
-$env:DB_PASSWORD="SUA_SENHA_ORACLE"
-$env:JWT_SECRET="SUA_CHAVE_JWT_COM_PELO_MENOS_64_CARACTERES"
-```
-
-As credenciais **não são armazenadas no repositório**.
-
-O arquivo `application.properties` utiliza:
-
-```properties
-spring.datasource.username=${DB_USERNAME}
-spring.datasource.password=${DB_PASSWORD}
-app.jwt.secret=${JWT_SECRET}
-```
-
-### Banco compartilhado utilizado na demonstração
-
-Como o schema Oracle utilizado durante o desenvolvimento é compartilhado e já possui histórico de migrations, para executar a versão utilizando esse banco pode ser necessário desativar o Flyway na sessão:
-
-```powershell
-$env:SPRING_FLYWAY_ENABLED="false"
-```
-
-Depois execute:
-
-```powershell
-.\gradlew.bat bootRun
-```
-
-A API será iniciada por padrão em:
-
-```text
-http://localhost:8080
-```
-
----
-
-# Executando o Mobile
-
-Abra outro terminal e volte para a raiz do projeto:
-
-```powershell
-cd C:\caminho\para\challenge12-clyvocare
-```
-
-Instale as dependências:
-
-```bash
+git clone -b feat/sprint4-release https://github.com/marina-2907/clyvocare-mobile-3.git
+cd clyvocare-mobile-3
 npm ci
 ```
 
-Inicie o Expo:
+### Backend Java
 
-```bash
-npx expo start -c
+Em um terminal PowerShell separado:
+
+```powershell
+cd backend-java
+$env:DB_USERNAME="SEU_USUARIO_ORACLE"
+$env:DB_PASSWORD="SUA_SENHA_ORACLE"
+$env:JWT_SECRET="SUA_CHAVE_JWT_CONFIGURADA"
+# Apenas quando necessário no banco de demonstração compartilhado:
+# $env:SPRING_FLYWAY_ENABLED="false"
+.\gradlew.bat bootRun
 ```
 
-Para executar no emulador Android, pressione:
+O serviço local utilizado nos testes é `http://localhost:8080`. As credenciais e a chave JWT não devem ser publicadas no GitHub.
 
-```text
-a
+### Mobile Android
+
+Em outro terminal, na raiz do projeto:
+
+```powershell
+npm ci
+npx expo run:android
 ```
 
----
+O comando gera e instala uma **development build** para Android. Na primeira execução, é necessário ter o emulador aberto e o JDK/SDK configurados. Para reiniciar somente o bundler em uma instalação já existente, use:
 
-# Testes e validações
+```powershell
+npx expo start --dev-client
+```
 
-Antes da entrega, o projeto foi validado utilizando:
+**Endereço da API:** definido por `EXPO_PUBLIC_API_URL`. Sem a variável, o emulador Android utiliza `http://10.0.2.2:8080`, que aponta para o `localhost` do computador. **Esse endereço não funciona para testadores em celulares externos**: uma versão distribuída precisa alcançar uma API publicada/acessível, com configuração apropriada para a rede e o ambiente.
 
-### Mobile
+## 6. Testes e validação
 
-```bash
-npx expo-doctor
+- O aplicativo foi executado em emulador Android usando `npx expo run:android`, com build Gradle concluído (`BUILD SUCCESSFUL`).
+- Foi executada a checagem TypeScript `npx tsc --noEmit`, sem erros reportados no terminal.
+- O fluxo do aplicativo e os alertas foram testados durante o desenvolvimento.
+- Antes da entrega, registrar em vídeo **recebimento real da notificação** e **toque abrindo a tela correta**, se confirmado no build final.
+
+Para checar o TypeScript novamente:
+
+```powershell
 npx tsc --noEmit
 ```
 
-O projeto mobile passou nas validações do Expo Doctor e na compilação TypeScript sem erros.
-
-### Backend
+Para executar testes Java, quando o ambiente de banco estiver configurado:
 
 ```powershell
-$env:SPRING_FLYWAY_ENABLED="false"
-.\gradlew.bat clean test
+cd backend-java
+.\gradlew.bat test
 ```
 
-Resultado obtido:
+## 7. Persistência e segurança
 
-```text
-BUILD SUCCESSFUL
-```
+O backend concentra dados de tutores, pets, espécies, consultas, vacinas, exames, tratamentos e registros clínicos. Os endpoints protegidos utilizam autenticação JWT. Configurações sensíveis do Oracle e do JWT são recebidas por variáveis de ambiente; não devem ser incluídas em commits nem no vídeo.
 
----
+## 8. Publicação e evidências — Sprint 4
 
-# Persistência
+**Estado da documentação:** a publicação final no Firebase App Distribution e a evidência do testador **ainda precisam ser preenchidas e confirmadas**. Não considere esta seção prova de publicação.
 
-A aplicação utiliza Oracle Database para persistência das principais entidades.
+| Item de entrega | Evidência / estado |
+| --- | --- |
+| Branch com código da Sprint 4 | [`feat/sprint4-release`](https://github.com/marina-2907/clyvocare-mobile-3/tree/feat/sprint4-release) |
+| Último commit de implementação enviado | `38808d5` (antes do commit deste README) |
+| APK final de distribuição | **Pendente — inserir link/identificador após upload** |
+| Firebase App Distribution | **Pendente — inserir link após publicação** |
+| Acesso do professor como testador | **Pendente — confirmar e registrar evidência** |
+| SHA exibido em **Sobre o App** | **Pendente — confirmar valor no build publicado** |
+| Vídeo da Sprint 4 com notificação recebida e aberta | **Pendente — inserir URL** |
 
-O backend possui entidades e endpoints relacionados a:
+O campo de SHA na tela **Sobre o App** lê `EXPO_PUBLIC_GIT_COMMIT_SHA`. Para a versão publicada, configure esse valor **antes de gerar o APK** e confira se corresponde ao commit da publicação. A versão final distribuída deve ser a mesma demonstrada no vídeo.
 
-- Usuários;
-- Tutores;
-- Pets;
-- Espécies;
-- Cidades;
-- Clínicas;
-- Veterinários;
-- Consultas;
-- Vacinas;
-- Exames;
-- Tratamentos;
-- Prescrições;
-- Lembretes;
-- Catálogo de serviços.
+### Demonstração anterior da versão integrada
 
-O mobile utiliza AsyncStorage apenas quando necessário para informações locais da aplicação e gerenciamento da sessão, enquanto os dados principais são obtidos e persistidos através da API.
+[Vídeo da integração Mobile + Java + Oracle](https://youtu.be/wZORlbeUca0). Este vídeo já consta da documentação anterior e **não substitui automaticamente** a gravação exigida para a Sprint 4.
 
----
+## 9. Integrantes
 
-# Segurança
-
-A API utiliza Spring Security e autenticação JWT.
-
-Rotas protegidas exigem token válido enviado pelo aplicativo.
-
-Informações sensíveis como credenciais do banco de dados e segredo JWT são configuradas através de variáveis de ambiente e não ficam armazenadas diretamente no código-fonte.
+| Integrante | RM |
+| --- | --- |
+| Felipe Maglio Filho | 563512 |
+| João Pedro Bitencourt Goldoni | 564339 |
+| Marina Tamagnini Magalhães | 561786 |
+| Mateus Granja dos Santos | 564930 |
+| Vitória Valentina Maglio | 563509 |
 
 ---
 
-# 🎥 Demonstração em vídeo
-
-Vídeo final da aplicação:
-
-https://youtu.be/wZORlbeUca0
-
-O vídeo demonstra o funcionamento da versão integrada do **ClyvoCare**, incluindo:
-
-- Execução do aplicativo mobile;
-- Login e autenticação do tutor;
-- Navegação pela Home;
-- Gerenciamento de múltiplos pets;
-- Cadastro e edição de pets;
-- Integração do mobile com a API REST;
-- Persistência dos dados no Oracle Database;
-- Agenda de consultas e cuidados;
-- Histórico de saúde;
-- Clyvo IA e alertas inteligentes;
-- Perfil do tutor;
-- Integração entre React Native, API Java Spring Boot e banco Oracle.
-
----
-
-# Integrantes
-
-**Felipe Maglio Filho**  
-RM 563512
-
-**João Pedro Bitencourt Goldoni**  
-RM 564339
-
-**Marina Tamagnini Magalhães**  
-RM 561786
-
-**Mateus Granja dos Santos**  
-RM 564930
-
-**Vitória Valentina Maglio**  
-RM 563509
-
----
-
-# Status do Projeto
-
-**Versão integrada Mobile + API Java + Oracle concluída e validada para entrega.**
-
-Projeto acadêmico desenvolvido para a FIAP.
+**ClyvoCare OS — Projeto acadêmico FIAP.** Código integrado e versionado. A conclusão da **entrega Sprint 4** depende da validação da publicação, do acesso do avaliador, do identificador de build e das evidências em vídeo.
