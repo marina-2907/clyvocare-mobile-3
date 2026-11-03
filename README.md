@@ -2,7 +2,7 @@
 
 Aplicativo mobile acadêmico da **FIAP**, desenvolvido para auxiliar tutores no acompanhamento da saúde e da rotina de cuidados de seus pets.
 
-**Versão:** 1.0.0 · **Plataforma demonstrada:** Android · **Repositório:** [marina-2907/clyvocare-mobile-3](https://github.com/marina-2907/clyvocare-mobile-3) · **Branch principal e de entrega:** `feat/sprint4-release`
+**Versão:** 1.0.0 · **Plataforma demonstrada:** Android · **Repositório:** [marina-2907/clyvocare-mobile-3](https://github.com/marina-2907/clyvocare-mobile-4) · **Branch principal e de entrega:** `feat/sprint4-release`
 
 > **Aviso:** orientações e alertas do ClyvoCare têm caráter informativo e não substituem a avaliação de um médico-veterinário.
 
