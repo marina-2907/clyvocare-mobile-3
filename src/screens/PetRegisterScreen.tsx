@@ -258,6 +258,55 @@ function getSpeciesMeta(name?: string | null) {
   return SPECIES_META[normalizeText(name)] ?? DEFAULT_SPECIES_META;
 }
 
+
+function SpeciesFace({
+  name,
+  size = 34,
+}: {
+  name?: string | null;
+  size?: number;
+}) {
+  const faces: Record<string, string> = {
+    cao: "🐶",
+    cachorro: "🐶",
+    gato: "🐱",
+    hamster: "🐹",
+    "porquinho da india": "🐹",
+    coelho: "🐰",
+    tartaruga: "🐢",
+    jabuti: "🐢",
+    furao: "🐾",
+    "rato twister": "🐭",
+    chinchila: "🐭",
+    ave: "🐦",
+    peixe: "🐠",
+    porco: "🐷",
+    "mini porco": "🐷",
+    vaca: "🐮",
+    "mini vaca": "🐮",
+    cabra: "🐐",
+    cobra: "🐍",
+    lagarto: "🦎",
+  };
+
+  const face = faces[normalizeText(name)] ?? "🐾";
+
+  return (
+    <Text
+      allowFontScaling={false}
+      style={{
+        fontSize: size,
+        lineHeight: size * 1.3,
+        textAlign: "center",
+        includeFontPadding: false,
+      }}
+    >
+      {face}
+    </Text>
+  );
+}
+
+
 function formatDateInput(value: string) {
   const digits = value.replace(/\D/g, "").slice(0, 8);
 
@@ -521,7 +570,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
     return (
       <View style={styles.centerContainer}>
         <View style={styles.loadingIconBox}>
-          <MaterialCommunityIcons name="paw" size={38} color="#0F766E" />
+        <MaterialCommunityIcons name="paw" size={38} color="#0F766E" />
         </View>
         <ActivityIndicator size="large" color="#0F766E" />
         <Text style={styles.loadingTitle}>Preparando o cadastro</Text>
@@ -599,11 +648,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
                 { backgroundColor: selectedSpeciesMeta.background },
               ]}
             >
-              <MaterialCommunityIcons
-                name={selectedSpeciesMeta.icon as any}
-                size={38}
-                color={selectedSpeciesMeta.color}
-              />
+              <SpeciesFace name={selectedSpecies?.name} size={38} />
             </View>
             <View style={styles.summaryContent}>
               <Text style={styles.summaryLabel}>PERFIL DO PET</Text>
@@ -658,11 +703,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
                   { backgroundColor: selectedSpeciesMeta.background },
                 ]}
               >
-                <MaterialCommunityIcons
-                  name={selectedSpeciesMeta.icon as any}
-                  size={25}
-                  color={selectedSpeciesMeta.color}
-                />
+                <SpeciesFace name={selectedSpecies?.name} size={25} />
               </View>
               <View style={styles.selectorContent}>
                 <Text
@@ -1007,11 +1048,7 @@ export default function PetRegisterScreen({ navigation, route }: any) {
                       { backgroundColor: meta.background },
                     ]}
                   >
-                    <MaterialCommunityIcons
-                      name={meta.icon as any}
-                      size={34}
-                      color={meta.color}
-                    />
+                    <SpeciesFace name={item.name} size={34} />
                   </View>
                   <Text style={styles.speciesCardName}>{item.name}</Text>
                   <Text style={styles.speciesCardSubtitle} numberOfLines={2}>

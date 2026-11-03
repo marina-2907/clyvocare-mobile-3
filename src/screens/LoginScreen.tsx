@@ -1,13 +1,16 @@
+
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+
 import AuthLayout, { authStyles } from "../components/AuthLayout";
 import { useLogin } from "../hooks/useAuthMutations";
 
@@ -18,11 +21,22 @@ export default function LoginScreen({ navigation }: any) {
 
   const loginMutation = useLogin();
 
+  function mostrarMensagem(titulo: string, mensagem: string) {
+    if (Platform.OS === "web") {
+      window.alert(`${titulo}\n\n${mensagem}`);
+    } else {
+      Alert.alert(titulo, mensagem);
+    }
+  }
+
   function handleLogin() {
     const formattedUsername = username.trim();
 
     if (!formattedUsername || !password) {
-      Alert.alert("Atenção", "Preencha o usuário e a senha.");
+      mostrarMensagem(
+        "Atenção",
+        "Preencha o usuário e a senha."
+      );
       return;
     }
 
@@ -33,14 +47,19 @@ export default function LoginScreen({ navigation }: any) {
       },
       {
         onError: (error) => {
-          Alert.alert(
-            "Não foi possível entrar",
+          const mensagem =
             error instanceof Error
               ? error.message
-              : "Confira os dados e tente novamente.",
+              : "Confira os dados e tente novamente.";
+
+          console.error("Erro ao realizar login:", mensagem);
+
+          mostrarMensagem(
+            "Não foi possível entrar",
+            mensagem
           );
         },
-      },
+      }
     );
   }
 
@@ -53,7 +72,11 @@ export default function LoginScreen({ navigation }: any) {
         <Text style={authStyles.label}>Usuário</Text>
 
         <View style={authStyles.inputContainer}>
-          <Ionicons name="person-outline" size={20} color="#64748B" />
+          <Ionicons
+            name="person-outline"
+            size={20}
+            color="#64748B"
+          />
 
           <TextInput
             style={authStyles.input}
@@ -71,7 +94,11 @@ export default function LoginScreen({ navigation }: any) {
         <Text style={authStyles.label}>Senha</Text>
 
         <View style={authStyles.inputContainer}>
-          <Ionicons name="lock-closed-outline" size={20} color="#64748B" />
+          <Ionicons
+            name="lock-closed-outline"
+            size={20}
+            color="#64748B"
+          />
 
           <TextInput
             style={authStyles.input}
@@ -84,10 +111,16 @@ export default function LoginScreen({ navigation }: any) {
           />
 
           <TouchableOpacity
-            onPress={() => setShowPassword((current) => !current)}
+            onPress={() =>
+              setShowPassword((current) => !current)
+            }
           >
             <Ionicons
-              name={showPassword ? "eye-off-outline" : "eye-outline"}
+              name={
+                showPassword
+                  ? "eye-off-outline"
+                  : "eye-outline"
+              }
               size={22}
               color="#64748B"
             />
@@ -98,7 +131,8 @@ export default function LoginScreen({ navigation }: any) {
       <TouchableOpacity
         style={[
           authStyles.primaryButton,
-          loginMutation.isPending && authStyles.primaryButtonDisabled,
+          loginMutation.isPending &&
+            authStyles.primaryButtonDisabled,
         ]}
         onPress={handleLogin}
         disabled={loginMutation.isPending}
@@ -107,15 +141,23 @@ export default function LoginScreen({ navigation }: any) {
         {loginMutation.isPending ? (
           <ActivityIndicator color="#FFFFFF" />
         ) : (
-          <Text style={authStyles.primaryButtonText}>Entrar</Text>
+          <Text style={authStyles.primaryButtonText}>
+            Entrar
+          </Text>
         )}
       </TouchableOpacity>
 
       <View style={authStyles.centerRow}>
-        <Text style={authStyles.secondaryText}>Ainda não possui conta?</Text>
+        <Text style={authStyles.secondaryText}>
+          Ainda não possui conta?
+        </Text>
 
-        <TouchableOpacity onPress={() => navigation.navigate("Cadastro")}>
-          <Text style={authStyles.link}> Cadastre-se</Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate("Cadastro")}
+        >
+          <Text style={authStyles.link}>
+            {" "}Cadastre-se
+          </Text>
         </TouchableOpacity>
       </View>
     </AuthLayout>
