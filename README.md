@@ -2,7 +2,7 @@
 
 Aplicativo mobile acadêmico da **FIAP**, desenvolvido para auxiliar tutores no acompanhamento da saúde e da rotina de cuidados de seus pets.
 
-**Versão:** 1.0.0 · **Plataforma demonstrada:** Android · **Repositório:** [marina-2907/clyvocare-mobile-3](https://github.com/marina-2907/clyvocare-mobile-3/tree/feat/sprint4-release) · **Branch de entrega:** `feat/sprint4-release`
+**Versão:** 1.0.0 · **Plataforma demonstrada:** Android · **Repositório:** [marina-2907/clyvocare-mobile-3](https://github.com/marina-2907/clyvocare-mobile-3) · **Branch principal e de entrega:** `feat/sprint4-release`
 
 > **Aviso:** orientações e alertas do ClyvoCare têm caráter informativo e não substituem a avaliação de um médico-veterinário.
 
@@ -28,13 +28,13 @@ O módulo **Clyvo IA** utiliza regras determinísticas e informações disponív
 
 ### Novidades da Sprint 4 — notificações locais
 
-- Integração de `expo-notifications` ao aplicativo Android com **development build** (`expo-dev-client`).
+- Integração de `expo-notifications` ao aplicativo Android, validada em **APK gerado com EAS Build**.
 - Solicitação de permissão de notificações e criação do canal Android `consultas`.
 - Quando uma consulta é salva pela API com horário definido, o app tenta programar um lembrete **uma hora antes** do atendimento.
 - O lembrete contém o nome do pet, o horário da consulta e os dados `tipo: "consulta"`, `consultaId` e `tela: "Agenda"`.
 - Se o horário do lembrete já passou, a notificação não é programada; falha no agendamento da notificação não desfaz a consulta salva.
 
-**Atenção:** alertas exibidos dentro do app e notificações do sistema operacional são funcionalidades diferentes. Para a entrega, ainda é preciso **validar e registrar em vídeo** o recebimento da notificação e a navegação para a tela correspondente ao tocá-la. A presença de `tela: "Agenda"` no payload, por si só, não comprova essa navegação.
+**Validação concluída:** foi verificado no emulador Android o recebimento real do lembrete da consulta e a navegação para a aba **Agenda** ao tocar na notificação. Alertas internos do app e notificações do Android são funcionalidades diferentes.
 
 ## 3. Arquitetura
 
@@ -120,7 +120,7 @@ $env:JWT_SECRET="SUA_CHAVE_JWT_CONFIGURADA"
 .\gradlew.bat bootRun
 ```
 
-O serviço local utilizado nos testes é `http://localhost:8080`. As credenciais e a chave JWT não devem ser publicadas no GitHub.
+O serviço local utilizado nos testes é `http://localhost:8080`. **A API da versão distribuída está hospedada no Render**: https://clyvocare-api.onrender.com. Para verificar uma rota pública que retorna JSON, consulte [GET /api/cities](https://clyvocare-api.onrender.com/api/cities); uma resposta `[]` representa lista vazia. A rota raiz (`/`) pode retornar HTTP 403 por causa da configuração do Spring Security. As credenciais e a chave JWT não devem ser publicadas no GitHub.
 
 ### Mobile Android
 
@@ -137,14 +137,16 @@ O comando gera e instala uma **development build** para Android. Na primeira exe
 npx expo start --dev-client
 ```
 
-**Endereço da API:** definido por `EXPO_PUBLIC_API_URL`. Sem a variável, o emulador Android utiliza `http://10.0.2.2:8080`, que aponta para o `localhost` do computador. **Esse endereço não funciona para testadores em celulares externos**: uma versão distribuída precisa alcançar uma API publicada/acessível, com configuração apropriada para a rede e o ambiente.
+**Endereço da API:** definido por `EXPO_PUBLIC_API_URL`. No APK de distribuição, foi incorporado `https://clyvocare-api.onrender.com` por meio do ambiente `preview` do EAS. Sem essa variável, o emulador Android utiliza `http://10.0.2.2:8080`, que aponta para o `localhost` do computador e não funciona em celulares externos.
 
 ## 6. Testes e validação
 
 - O aplicativo foi executado em emulador Android usando `npx expo run:android`, com build Gradle concluído (`BUILD SUCCESSFUL`).
 - Foi executada a checagem TypeScript `npx tsc --noEmit`, sem erros reportados no terminal.
 - O fluxo do aplicativo e os alertas foram testados durante o desenvolvimento.
-- Antes da entrega, registrar em vídeo **recebimento real da notificação** e **toque abrindo a tela correta**, se confirmado no build final.
+- Foi confirmado no emulador Android o **recebimento real da notificação** e o **toque abrindo a Agenda**.
+- A API hospedada no Render respondeu ao endpoint público `/api/cities` e houve autenticação online bem-sucedida no endpoint de login (`OWNER`).
+- O APK de distribuição foi compilado com a API HTTPS pública e instalado no emulador; também foram testados login, cadastro de pet e agenda.
 
 Para checar o TypeScript novamente:
 
@@ -165,23 +167,27 @@ O backend concentra dados de tutores, pets, espécies, consultas, vacinas, exame
 
 ## 8. Publicação e evidências — Sprint 4
 
-**Estado da documentação:** a publicação final no Firebase App Distribution e a evidência do testador **ainda precisam ser preenchidas e confirmadas**. Não considere esta seção prova de publicação.
+A entrega final da versão **1.0.0** foi gerada com **EAS Build**, hospedando o backend **Spring Boot** no **Render** e distribuindo o APK pelo **Firebase App Distribution**. Foram convidados três testadores na versão de 03/11/2026; no registro da distribuição, os convites ainda aguardavam aceitação.
 
-| Item de entrega | Evidência / estado |
+### Links da entrega
+
+| Item | Link / evidência |
 | --- | --- |
-| Branch com código da Sprint 4 | [`feat/sprint4-release`](https://github.com/marina-2907/clyvocare-mobile-3/tree/feat/sprint4-release) |
-| Último commit de implementação enviado | `38808d5` (antes do commit deste README) |
-| APK final de distribuição | **Pendente — inserir link/identificador após upload** |
-| Firebase App Distribution | **Pendente — inserir link após publicação** |
-| Acesso do professor como testador | **Pendente — confirmar e registrar evidência** |
-| SHA exibido em **Sobre o App** | **Pendente — confirmar valor no build publicado** |
-| Vídeo da Sprint 4 com notificação recebida e aberta | **Pendente — inserir URL** |
+| **GitHub — código e histórico de commits** | [Repositório ClyvoCare OS](https://github.com/marina-2907/clyvocare-mobile-3) — branch padrão `feat/sprint4-release` |
+| **Vídeo final Sprint 4** | [Assistir à apresentação no YouTube](https://youtu.be/gz9HC7dxdnA) |
+| **API Java — Render (rota pública de teste)** | [GET /api/cities](https://clyvocare-api.onrender.com/api/cities) |
+| **API Java — URL base** | [https://clyvocare-api.onrender.com](https://clyvocare-api.onrender.com) |
+| **APK Android — EAS Build** | [Abrir e baixar o build de distribuição](https://expo.dev/accounts/marina_2901/projects/clyvocare-mobile/builds/36c84caa-79ce-4bfd-98d1-4d4f91b24bb7) |
+| **Firebase App Distribution** | APK 1.0.0 distribuído para três testadores convidados; aceitação e instalação dependem de cada destinatário |
+| **Commit do APK publicado (Sobre o App)** | `bf65ef788a7d2728272a0afb6ef1cffd4c81858f` |
 
-O campo de SHA na tela **Sobre o App** lê `EXPO_PUBLIC_GIT_COMMIT_SHA`. Para a versão publicada, configure esse valor **antes de gerar o APK** e confira se corresponde ao commit da publicação. A versão final distribuída deve ser a mesma demonstrada no vídeo.
+O APK foi compilado com `EXPO_PUBLIC_API_URL=https://clyvocare-api.onrender.com` e `EXPO_PUBLIC_GIT_COMMIT_SHA=bf65ef788a7d2728272a0afb6ef1cffd4c81858f`. **Esse SHA identifica o código usado no APK**, e pode ser anterior a commits posteriores de documentação, sem representar divergência de versão.
+
+A rota pública `/api/cities` pode retornar `[]`, indicando que não há cidades cadastradas. A rota raiz da API é protegida por Spring Security e não é uma página web de apresentação.
 
 ### Demonstração anterior da versão integrada
 
-[Vídeo da integração Mobile + Java + Oracle](https://youtu.be/wZORlbeUca0). Este vídeo já consta da documentação anterior e **não substitui automaticamente** a gravação exigida para a Sprint 4.
+[Vídeo da integração Mobile + Java + Oracle](https://youtu.be/wZORlbeUca0). A demonstração **final da Sprint 4** está no link indicado acima.
 
 ## 9. Integrantes
 
@@ -195,4 +201,4 @@ O campo de SHA na tela **Sobre o App** lê `EXPO_PUBLIC_GIT_COMMIT_SHA`. Para a 
 
 ---
 
-**ClyvoCare OS — Projeto acadêmico FIAP.** Código integrado e versionado. A conclusão da **entrega Sprint 4** depende da validação da publicação, do acesso do avaliador, do identificador de build e das evidências em vídeo.
+**ClyvoCare OS — Projeto acadêmico FIAP.** Código integrado e versionado. Entrega Sprint 4 documentada com vídeo final, build Android, API pública e distribuição via Firebase. A aceitação do convite e a instalação pelo avaliador são etapas externas ainda dependentes dos testadores.
