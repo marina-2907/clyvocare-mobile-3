@@ -1,3 +1,4 @@
+
 {
   "expo": {
     "name": "clyvocare-mobile",
@@ -20,7 +21,10 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.clyvocaremobile"
+      "package": "com.anonymous.clyvocaremobile",
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM"
+      ]
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -39,16 +43,14 @@
         }
       ],
       "expo-font",
-      
-[
-  "expo-build-properties",
-  {
-    "android": {
-      "usesCleartextTraffic": true
-    }
-  }
-]
-
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "reactCompiler": true

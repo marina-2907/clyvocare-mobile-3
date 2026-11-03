@@ -1,11 +1,19 @@
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import { clinicalService } from "../services/clinicalService";
 import { localCareService } from "../services/localCareService";
 import { agendarNotificacaoConsulta } from "../services/notificationService";
 
-import { AppointmentRequest, SelfReportedEvent } from "../types/clinical";
+import {
+  AppointmentRequest,
+  SelfReportedEvent,
+} from "../types/clinical";
+
 import { decodeReasonWithTime } from "../utils/date";
 
 // =====================================================
@@ -14,21 +22,34 @@ import { decodeReasonWithTime } from "../utils/date";
 
 export const clinicalKeys = {
   all: ["clinical"] as const,
+
   appointments: (petId?: number) =>
     ["clinical", "appointments", petId] as const,
+
   vaccinations: (petId?: number) =>
     ["clinical", "vaccinations", petId] as const,
+
   exams: (petId?: number) =>
     ["clinical", "exams", petId] as const,
+
   treatments: (petId?: number) =>
     ["clinical", "treatments", petId] as const,
+
   localHistory: (petId?: number) =>
     ["clinical", "local-history", petId] as const,
+
   reminders: ["clinical", "reminders"] as const,
+
   veterinarians: ["clinical", "veterinarians"] as const,
+
   clinics: ["clinical", "clinics"] as const,
+
   vaccines: ["clinical", "vaccines"] as const,
 };
+
+// =====================================================
+// VALIDAÇÃO DO PET
+// =====================================================
 
 function requirePetId(petId?: number) {
   if (!petId) {
@@ -45,8 +66,12 @@ function requirePetId(petId?: number) {
 export function useAppointments(petId?: number) {
   return useQuery({
     queryKey: clinicalKeys.appointments(petId),
+
     queryFn: () =>
-      clinicalService.listAppointments(requirePetId(petId)),
+      clinicalService.listAppointments(
+        requirePetId(petId)
+      ),
+
     enabled: Boolean(petId),
   });
 }
@@ -58,8 +83,12 @@ export function useAppointments(petId?: number) {
 export function useVaccinations(petId?: number) {
   return useQuery({
     queryKey: clinicalKeys.vaccinations(petId),
+
     queryFn: () =>
-      clinicalService.listVaccinations(requirePetId(petId)),
+      clinicalService.listVaccinations(
+        requirePetId(petId)
+      ),
+
     enabled: Boolean(petId),
   });
 }
@@ -71,8 +100,12 @@ export function useVaccinations(petId?: number) {
 export function useExams(petId?: number) {
   return useQuery({
     queryKey: clinicalKeys.exams(petId),
+
     queryFn: () =>
-      clinicalService.listExams(requirePetId(petId)),
+      clinicalService.listExams(
+        requirePetId(petId)
+      ),
+
     enabled: Boolean(petId),
   });
 }
@@ -84,8 +117,12 @@ export function useExams(petId?: number) {
 export function useTreatments(petId?: number) {
   return useQuery({
     queryKey: clinicalKeys.treatments(petId),
+
     queryFn: () =>
-      clinicalService.listTreatments(requirePetId(petId)),
+      clinicalService.listTreatments(
+        requirePetId(petId)
+      ),
+
     enabled: Boolean(petId),
   });
 }
@@ -97,8 +134,12 @@ export function useTreatments(petId?: number) {
 export function useLocalHistory(petId?: number) {
   return useQuery({
     queryKey: clinicalKeys.localHistory(petId),
+
     queryFn: () =>
-      localCareService.listByPet(requirePetId(petId)),
+      localCareService.listByPet(
+        requirePetId(petId)
+      ),
+
     enabled: Boolean(petId),
   });
 }
@@ -155,23 +196,36 @@ export function useScheduleAppointment() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // Salva a consulta na API Java e no Oracle.
     mutationFn: (data: AppointmentRequest) =>
       clinicalService.scheduleAppointment(data),
 
     onSuccess: async (appointment) => {
-      // Atualiza a agenda após salvar na API.
+      // Atualiza a agenda após salvar a consulta.
       await queryClient.invalidateQueries({
-        queryKey: clinicalKeys.appointments(appointment.petId),
+        queryKey: clinicalKeys.appointments(
+          appointment.petId
+        ),
       });
 
-      // Recupera o horário da consulta.
+      // Recupera o horário salvo na descrição.
       const dadosConsulta = decodeReasonWithTime(
         appointment.reason
       );
 
-      // Programa o lembrete somente se houver horário.
-      if (dadosConsulta.time) {
-        try {
+      // Não programa lembretes sem horário válido.
+      if (!dadosConsulta.time) {
+        console.warn(
+          "[CLYVO] Consulta salva sem horário. " +
+          "Nenhuma notificação foi agendada."
+        );
+
+        return;
+      }
+
+      try {
+        // Solicita o agendamento ao Android.
+        const notificationId =
           await agendarNotificacaoConsulta(
             appointment.id,
             appointment.petName,
@@ -179,17 +233,49 @@ export function useScheduleAppointment() {
             dadosConsulta.time
           );
 
-          console.log(
-            "Processamento do lembrete de consulta concluído."
-          );
-        } catch (error) {
-          // A consulta continua salva mesmo se a
-          // notificação apresentar algum problema.
+        // Um retorno null indica que não foi agendado.
+        if (!notificationId) {
           console.warn(
-            "Consulta salva, mas houve erro ao programar a notificação:",
-            error
+            "[CLYVO] Consulta salva, mas " +
+            "nenhuma notificação foi agendada. " +
+            "Verifique permissões e horário."
           );
+
+          return;
         }
+
+        // Confirma o identificador retornado pelo Expo.
+        console.log(
+          "[CLYVO] Notificação agendada com sucesso."
+        );
+
+        console.log(
+          "[CLYVO] ID da notificação:",
+          notificationId
+        );
+
+        console.log(
+          "[CLYVO] Pet:",
+          appointment.petName
+        );
+
+        console.log(
+          "[CLYVO] Data da consulta:",
+          appointment.appointmentDate
+        );
+
+        console.log(
+          "[CLYVO] Horário da consulta:",
+          dadosConsulta.time
+        );
+      } catch (error) {
+        // Uma falha no lembrete não desfaz
+        // o agendamento já salvo no Oracle.
+        console.warn(
+          "[CLYVO] Consulta salva, mas ocorreu " +
+          "um erro ao agendar a notificação:",
+          error
+        );
       }
     },
   });
@@ -208,11 +294,16 @@ export function useCancelAppointment() {
     }: {
       appointmentId: number;
       petId: number;
-    }) => clinicalService.cancelAppointment(appointmentId),
+    }) =>
+      clinicalService.cancelAppointment(
+        appointmentId
+      ),
 
     onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({
-        queryKey: clinicalKeys.appointments(variables.petId),
+        queryKey: clinicalKeys.appointments(
+          variables.petId
+        ),
       });
     },
   });
@@ -245,12 +336,18 @@ export function useCreateLocalHistory() {
 
   return useMutation({
     mutationFn: (
-      data: Omit<SelfReportedEvent, "id" | "createdAt">
-    ) => localCareService.create(data),
+      data: Omit<
+        SelfReportedEvent,
+        "id" | "createdAt"
+      >
+    ) =>
+      localCareService.create(data),
 
     onSuccess: async (event) => {
       await queryClient.invalidateQueries({
-        queryKey: clinicalKeys.localHistory(event.petId),
+        queryKey: clinicalKeys.localHistory(
+          event.petId
+        ),
       });
     },
   });
@@ -269,11 +366,14 @@ export function useDeleteLocalHistory() {
     }: {
       eventId: string;
       petId: number;
-    }) => localCareService.remove(eventId),
+    }) =>
+      localCareService.remove(eventId),
 
     onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({
-        queryKey: clinicalKeys.localHistory(variables.petId),
+        queryKey: clinicalKeys.localHistory(
+          variables.petId
+        ),
       });
     },
   });
